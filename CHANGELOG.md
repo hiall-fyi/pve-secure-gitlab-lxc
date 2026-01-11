@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-01-11
+
+### Added
+- **Simple Storage Mode (Default)** - Single root filesystem for easier management
+- **Advanced Storage Mode** - Separate LVM volumes for granular control (previous default)
+- Storage mode selection in interactive mode with clear recommendations
+- `--storage-mode` parameter for non-interactive installations
+- `--rootfs-size` parameter for Simple Mode
+- Improved storage sizing recommendations based on team size
+- Banner warnings about Advanced Mode complexity
+- Migration guide from Advanced to Simple mode
+
+### Changed
+- **Default storage mode changed from Advanced to Simple** (breaking change for automation)
+- Improved help text with storage mode explanations
+- Updated examples to showcase Simple Mode first
+- Reorganized README with storage mode comparison section
+
+### Fixed
+- Over-provisioned storage in separate volumes
+- Difficulty redistributing space between volumes
+- Unnecessary complexity for small/medium deployments
+
+### Deprecated
+- None (Advanced Mode still fully supported)
+
+### Technical Details
+- Simple Mode: Single root filesystem, all GitLab data on root
+- Advanced Mode: Separate LVM volumes for /etc/gitlab, /var/log/gitlab, /var/opt/gitlab
+- Backward compatibility: v1.0.0 parameters automatically trigger Advanced Mode
+- Based on real-world consolidation experience (20G + 4.8G separate → 24G unified)
+
+### Migration
+- Existing v1.0.0 installations continue to work unchanged
+- Users can manually consolidate to Simple Mode (see migration guide)
+- New installations default to Simple Mode (recommended)
+
 ## [1.0.0] - 2025-01-04
 
 ### Added

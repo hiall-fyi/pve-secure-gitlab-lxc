@@ -2,46 +2,49 @@
 
 Production-ready, security-hardened installation script for deploying GitLab Community Edition on Proxmox LXC containers.
 
-## What's New
+## 🚀 What's New
 
-### Added
-- Initial release of GitLab CE Secure Installation Script for Proxmox LXC
-- Automated system updates for both Proxmox host and container
-- Unprivileged LXC container deployment for enhanced security
-- Flexible SSL configuration (self-signed or Let's Encrypt)
-- Interactive and non-interactive installation modes
+This is the first stable release of GitLab CE Secure Installation Script - a comprehensive solution for deploying GitLab on Proxmox LXC with military-grade security standards.
+
+### ✨ Key Features
+
+**🔒 Security First**
+- Unprivileged LXC container for enhanced isolation
+- Automated system updates (host + container)
+- Flexible SSL: Self-signed certificates (internal) or Let's Encrypt (public domains)
+- Strong cipher suites (TLS 1.2/1.3)
+- HTTPS redirect enforcement
+- Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy)
+- Rate limiting configuration
+- UFW firewall setup
+- Session management (7-day expiry)
+
+**📦 Storage Management**
+- Separate LVM volumes for better organization:
+  - `/etc/gitlab` - Configuration files
+  - `/var/log/gitlab` - Log files
+  - `/var/opt/gitlab` - Data files
+- Easy backup and snapshot management
+- Storage sizing recommendations by team size
+
+**⚙️ Flexible Deployment**
+- Interactive mode for guided setup
+- Non-interactive mode for automation
 - Specific GitLab version installation support
 - Multiple network bridge support (vmbr0, vmbr1, vmbr3, etc.)
 - Intelligent cleanup of existing containers and LVs
 - Fingerprint tracking for easy resource identification
-- Separate LVM volumes for config, logs, and data
-- Security hardening configuration (TLS 1.2/1.3, security headers, rate limiting)
-- UFW firewall setup with SSH, HTTP, HTTPS rules
-- Comprehensive documentation and usage examples
 
-### Features
-- **Automated Updates**: Ensures both Proxmox host and container are fully updated
-- **Security First**: Unprivileged container, strong ciphers, security headers, rate limiting
-- **Flexible SSL**: Self-signed certificates (internal) or Let's Encrypt (public domains)
-- **Storage Management**: Separate LVM volumes for better organization and backup
-- **Version Control**: Install latest stable or specific GitLab version
-- **Network Flexibility**: Support for multiple network bridges
-- **Auto Cleanup**: Intelligent cleanup with force-cleanup option
-- **Easy Identification**: Fingerprint tracking in container notes
+**📖 Comprehensive Documentation**
+- SSL configuration guide (self-signed vs Let's Encrypt)
+- Storage sizing recommendations by team size
+- 6 real-world usage examples
+- Post-installation guide
+- Management commands reference
+- Troubleshooting section
+- Performance tuning guide
 
-### Technical Details
-- Bash script with comprehensive error handling
-- Tested on Proxmox VE 8.x with Ubuntu 24.04 LXC
-- GitLab CE (latest stable or specific version)
-- Unprivileged LXC container
-- TLS 1.2/1.3 with strong cipher suites
-- HTTPS redirect enforcement
-- Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy)
-- Rate limiting configuration
-- UFW firewall integration
-- Session management (7-day expiry)  
-
-## Installation
+## 📦 Installation
 
 ### Quick Start
 
@@ -103,24 +106,34 @@ chmod +x pve-secure-gitlab-lxc.sh
   --ssl-type letsencrypt
 ```
 
-## Documentation
+## 🔧 Technical Details
 
-Full documentation available in [README.md](https://github.com/hiall-fyi/pve-secure-gitlab-lxc/blob/main/README.md):
+- **Tested On**: Proxmox VE 8.x with Ubuntu 24.04 LXC
+- **GitLab Version**: Latest stable (or specific version via `--version` parameter)
+- **Container Type**: Unprivileged LXC
+- **SSL Options**: Self-signed (default) or Let's Encrypt
+- **Network**: Flexible bridge support (vmbr0, vmbr1, vmbr3, etc.)
+- **Error Handling**: Comprehensive error handling and validation
+- **Cleanup**: Automatic cleanup of failed installations
 
-- SSL Configuration Guide (Self-Signed vs Let's Encrypt)
-- Storage Sizing Recommendations by Team Size
-- Usage Examples for Different Scenarios
-- Post-Installation Guide
-- Management Commands Reference
-- Troubleshooting Section
-- Performance Tuning Guide
+## 📚 Documentation
 
-## Changelog
+Full documentation available in [README.md](https://github.com/hiall-fyi/pve-secure-gitlab-lxc/blob/main/README.md)
 
-See [CHANGELOG.md](https://github.com/hiall-fyi/pve-secure-gitlab-lxc/blob/main/CHANGELOG.md) for detailed version history.
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 🙏 Acknowledgments
+
+Thanks to the open-source community and the tools that made this possible:
+- GitLab Community Edition
+- Proxmox VE
+- Ubuntu LXC
+- OpenSSL & Let's Encrypt
 
 ---
 
-**Made with ❤️ by [@hiall-fyi](https://github.com/hiall-fyi)**
+**Full Changelog**: https://github.com/hiall-fyi/pve-secure-gitlab-lxc/blob/main/CHANGELOG.md
 
-If this script saved you time and effort, consider [buying me a coffee](https://buymeacoffee.com/hiallfyi)!
+**Installation**: `wget https://raw.githubusercontent.com/hiall-fyi/pve-secure-gitlab-lxc/main/pve-secure-gitlab-lxc.sh`

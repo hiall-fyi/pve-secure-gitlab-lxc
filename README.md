@@ -5,6 +5,7 @@
 ![GitLab CE](https://img.shields.io/badge/GitLab-CE-FC6D26?style=for-the-badge&logo=gitlab&logoColor=white)
 ![Proxmox](https://img.shields.io/badge/Proxmox-VE-E57000?style=for-the-badge&logo=proxmox&logoColor=white)
 ![Security](https://img.shields.io/badge/Security-Hardened-00C853?style=for-the-badge&logo=security&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-Manual_Verified-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
 
 **A production-ready, security-hardened installation script for deploying GitLab Community Edition on Proxmox LXC containers.**
@@ -26,6 +27,80 @@
 ---
 
 ## 🎯 Features
+
+### Storage Modes (NEW in v1.1.0)
+
+Choose between two storage configurations based on your needs:
+
+#### Simple Mode (Default) ⭐ Recommended for 90% of users
+
+**What it is**: Single root filesystem containing all GitLab data
+
+**Benefits**:
+- ✅ **Automatic space sharing** - No more "log disk full but data disk empty"
+- ✅ **Easier management** - One volume to monitor and expand
+- ✅ **Simpler backups** - Single snapshot covers everything
+- ✅ **More flexible** - Space automatically allocated where needed
+- ✅ **Less planning** - Just specify total size, done!
+
+**Perfect for**:
+- Small to medium teams (1-50 users)
+- Internal deployments
+- Development/testing environments
+- When you want simplicity over granular control
+
+**Example**:
+```bash
+./pve-secure-gitlab-lxc.sh \
+  --vmid 110 --hostname gitlab --cpu 4 --ram 8192 \
+  --storage-mode simple --rootfs-size 50 \
+  --ip 192.168.1.110/24 --gateway 192.168.1.1 --dns 8.8.8.8 \
+  --url https://gitlab.local --storage local-lvm
+```
+
+---
+
+#### Advanced Mode - For enterprise deployments
+
+**What it is**: Separate LVM volumes for /etc/gitlab, /var/log/gitlab, /var/opt/gitlab
+
+**Benefits**:
+- ✅ **Independent snapshots** - Backup each volume separately
+- ✅ **Granular quota enforcement** - Limit log growth independently
+- ✅ **Separate backup schedules** - Different retention for logs vs data
+- ✅ **Compliance ready** - Meet specific regulatory requirements
+
+**Perfect for**:
+- Enterprise deployments with compliance requirements
+- Need to limit log growth independently
+- Want separate backup schedules for different data types
+- Require quota enforcement per volume
+
+**Example**:
+```bash
+./pve-secure-gitlab-lxc.sh \
+  --vmid 120 --hostname gitlab --cpu 4 --ram 8192 \
+  --storage-mode advanced --bootdisk 20 --datadisk 100 --logdisk 10 --configdisk 2 \
+  --ip 192.168.1.120/24 --gateway 192.168.1.1 --dns 8.8.8.8 \
+  --url https://gitlab.local --storage local-lvm
+```
+
+---
+
+#### Quick Comparison
+
+| Feature | Simple Mode | Advanced Mode |
+|---------|-------------|---------------|
+| **Complexity** | Low ⭐ | Medium |
+| **Setup Time** | 1 parameter | 4 parameters |
+| **Management** | Easy | Requires planning |
+| **Flexibility** | High (auto-sharing) | Medium (fixed sizes) |
+| **Backup** | Single snapshot | Multiple snapshots |
+| **Expansion** | One command | Per-volume commands |
+| **Space Efficiency** | High | Can waste space |
+| **Best For** | 90% of users | Enterprise/Compliance |
+
+**💡 Recommendation**: Start with Simple Mode. You can always migrate to Advanced Mode later if needed.
 
 ### Core Functionality
 
@@ -80,23 +155,130 @@
 
 ## 🚀 Quick Start
 
-### 1. Download the Script
+### Interactive Mode (Recommended for First-Time Users)
 
-```bash
-wget https://raw.githubusercontent.com/hiall-fyi/pve-secure-gitlab-lxc/main/pve-secure-gitlab-lxc.sh
-chmod +x pve-secure-gitlab-lxc.sh
-```
+The script will guide you through the setup process:
 
-### 2. Run Installation
-
-**Interactive Mode** (Recommended for first-time users):
 ```bash
 ./pve-secure-gitlab-lxc.sh
 ```
 
-**Non-Interactive Mode** (For automation):
+**What happens**:
+
+**Step 1: Choose Storage Mode**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Storage Configuration Mode
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Choose storage configuration:
+
+  1. Simple Mode (Recommended) ⭐
+     • Single root filesystem
+     • All GitLab data on root
+     • Easier management
+     • Flexible space allocation
+     • Best for most users
+
+  2. Advanced Mode
+     • Separate LVM volumes
+     • Granular control
+     • Independent snapshots
+     • More complex management
+
+Select mode (1 or 2, default: 1): 
+```
+
+**Step 2: Basic Configuration**
+
+If you selected Simple Mode:
+```
+Container ID (e.g., 110): 110
+Container Name (e.g., gitlab): gitlab
+CPU Cores (e.g., 4): 4
+RAM in MB (e.g., 8192): 8192
+Root Filesystem Size in GB (e.g., 50): 50    ← Just one size!
+Container IP (e.g., 192.168.1.110/24): 192.168.1.110/24
+Gateway (e.g., 192.168.1.1): 192.168.1.1
+DNS Server (e.g., 8.8.8.8): 8.8.8.8
+GitLab URL (e.g., https://gitlab.local): https://gitlab.local
+LVM Storage VG Name (e.g., pve): pve
+```
+
+If you selected Advanced Mode:
+```
+Container ID (e.g., 110): 110
+Container Name (e.g., gitlab): gitlab
+CPU Cores (e.g., 4): 4
+RAM in MB (e.g., 8192): 8192
+Boot Disk Size in GB (e.g., 20): 20
+Data Disk Size in GB (e.g., 100): 100
+Log Disk Size in GB (e.g., 10): 10
+Config Disk Size in GB (e.g., 2): 2
+Container IP (e.g., 192.168.1.110/24): 192.168.1.110/24
+Gateway (e.g., 192.168.1.1): 192.168.1.1
+DNS Server (e.g., 8.8.8.8): 8.8.8.8
+GitLab URL (e.g., https://gitlab.local): https://gitlab.local
+LVM Storage VG Name (e.g., pve): pve
+```
+
+**Step 3: Confirmation & Installation**
+
+The script shows a summary and asks for confirmation. After you confirm, it automatically:
+1. ✅ Updates Proxmox host system
+2. ✅ Creates unprivileged LXC container
+3. ✅ Installs GitLab CE
+4. ✅ Configures SSL certificate
+5. ✅ Applies security hardening
+6. ✅ Sets up firewall
+
+**Total time**: ~15-20 minutes
+
+---
+
+### Non-Interactive Mode (For Automation)
+
+#### Simple Mode Example (Recommended)
+
 ```bash
-# Internal deployment with self-signed certificate (default)
+./pve-secure-gitlab-lxc.sh \
+  --vmid 110 \
+  --hostname gitlab \
+  --cpu 4 \
+  --ram 8192 \
+  --storage-mode simple \
+  --rootfs-size 50 \
+  --ip 192.168.1.110/24 \
+  --gateway 192.168.1.1 \
+  --dns 8.8.8.8 \
+  --url https://gitlab.local \
+  --storage local-lvm
+```
+
+#### Advanced Mode Example
+
+```bash
+./pve-secure-gitlab-lxc.sh \
+  --vmid 120 \
+  --hostname gitlab \
+  --cpu 4 \
+  --ram 8192 \
+  --storage-mode advanced \
+  --bootdisk 20 \
+  --datadisk 100 \
+  --logdisk 10 \
+  --configdisk 2 \
+  --ip 192.168.1.120/24 \
+  --gateway 192.168.1.1 \
+  --dns 8.8.8.8 \
+  --url https://gitlab.local \
+  --storage local-lvm
+```
+
+#### v1.0.0 Compatibility (Automatically uses Advanced Mode)
+
+```bash
+# Old v1.0.0 command still works!
 ./pve-secure-gitlab-lxc.sh \
   --vmid 110 \
   --hostname gitlab \
@@ -109,33 +291,27 @@ chmod +x pve-secure-gitlab-lxc.sh
   --ip 192.168.1.110/24 \
   --gateway 192.168.1.1 \
   --dns 8.8.8.8 \
-  --url https://gitlab.example.com \
-  --storage local-lvm \
-  --bridge vmbr0
-
-# Public deployment with Let's Encrypt
-./pve-secure-gitlab-lxc.sh \
-  --vmid 115 \
-  --hostname gitlab \
-  --cpu 4 \
-  --ram 8192 \
-  --bootdisk 20 \
-  --datadisk 100 \
-  --logdisk 10 \
-  --configdisk 2 \
-  --ip 203.0.113.115/24 \
-  --gateway 203.0.113.1 \
-  --dns 8.8.8.8 \
-  --url https://gitlab.example.com \
-  --storage local-lvm \
-  --bridge vmbr0 \
-  --ssl-type letsencrypt
+  --url https://gitlab.local \
+  --storage local-lvm
 ```
+
+---
+
+### 1. Download the Script
+
+```bash
+wget https://raw.githubusercontent.com/hiall-fyi/pve-secure-gitlab-lxc/main/pve-secure-gitlab-lxc.sh
+chmod +x pve-secure-gitlab-lxc.sh
+```
+
+### 2. Run Installation
+
+See examples above for interactive or non-interactive mode.
 
 ### 3. Access GitLab
 
 After installation completes:
-1. Visit your GitLab URL (e.g., `https://gitlab.local.lan`)
+1. Visit your GitLab URL (e.g., `https://gitlab.local`)
 2. Login with username `root` and the password displayed at installation completion
 3. **Change the root password immediately!**
 
@@ -218,110 +394,153 @@ pct exec <VMID> -- gitlab-ctl renew-le-certs
 
 ## 💾 Storage Configuration Guide
 
-### Understanding GitLab Storage Requirements
+### Understanding Storage Modes
 
-GitLab uses four separate storage volumes for better management and performance:
+v1.1.0 introduces two storage modes to fit different use cases:
 
-| Volume | Mount Point | Purpose | Growth Rate | Recommended Size |
-|--------|-------------|---------|-------------|------------------|
-| **Boot Disk** | `/` | OS and GitLab binaries | Low | 20-30 GB |
-| **Config Disk** | `/etc/gitlab` | Configuration files | Very Low | 1-5 GB |
-| **Log Disk** | `/var/log/gitlab` | Application logs | Medium | 10-20 GB |
-| **Data Disk** | `/var/opt/gitlab` | Repositories, uploads, artifacts | High | 50-500+ GB |
+---
 
-### Sizing Recommendations by Team Size
+### Simple Mode (Recommended) ⭐
 
-#### Small Team (1-10 users)
+**Single root filesystem** - All GitLab data stored on root
+
+**Sizing Recommendations**:
+
+| Team Size | Recommended Size | Use Case |
+|-----------|------------------|----------|
+| 1-10 users | 30-50 GB | Small team, light usage |
+| 10-50 users | 50-100 GB | Medium team, moderate CI/CD |
+| 50+ users | 100-200+ GB | Large team, heavy CI/CD |
+
+**Example**:
 ```bash
---bootdisk 20    # 20 GB for OS
---configdisk 2   # 2 GB for configs
---logdisk 10     # 10 GB for logs
---datadisk 50    # 50 GB for data
-# Total: ~82 GB
+# Small team
+--storage-mode simple --rootfs-size 50
+
+# Medium team
+--storage-mode simple --rootfs-size 100
+
+# Large team
+--storage-mode simple --rootfs-size 200
 ```
 
-#### Medium Team (10-50 users)
+**Monitoring**:
 ```bash
---bootdisk 25    # 25 GB for OS
---configdisk 3   # 3 GB for configs
---logdisk 15     # 15 GB for logs
---datadisk 150   # 150 GB for data
-# Total: ~193 GB
+# Check total usage
+pct exec <VMID> -- df -h /
+
+# Check GitLab data breakdown
+pct exec <VMID> -- du -sh /etc/gitlab /var/log/gitlab /var/opt/gitlab
 ```
 
-#### Large Team (50+ users)
+**Expanding**:
 ```bash
---bootdisk 30    # 30 GB for OS
---configdisk 5   # 5 GB for configs
---logdisk 20     # 20 GB for logs
---datadisk 300   # 300+ GB for data
-# Total: ~355+ GB
+# Stop container
+pct stop <VMID>
+
+# Extend LV (add 50GB)
+lvextend -L +50G /dev/pve/vm-<VMID>-disk-0
+
+# Resize filesystem
+e2fsck -f /dev/pve/vm-<VMID>-disk-0
+resize2fs /dev/pve/vm-<VMID>-disk-0
+
+# Start container
+pct start <VMID>
 ```
 
-### Storage Growth Factors
+---
 
-**Data Disk** (`/var/opt/gitlab`) grows based on:
-- Number of Git repositories
-- Repository sizes (code, binaries, assets)
-- CI/CD artifacts and job logs
-- Container registry images
-- User uploads and attachments
-- Database size
+### Advanced Mode - For Enterprise
 
-**Log Disk** (`/var/log/gitlab`) grows based on:
-- User activity level
-- CI/CD pipeline frequency
-- Log retention policy
-- Debug logging settings
+**Separate LVM volumes** for granular control
 
-**Config Disk** (`/etc/gitlab`) is relatively stable:
-- Configuration files
-- SSL certificates
-- Custom scripts
+**Sizing Recommendations**:
 
-**Boot Disk** (`/`) grows slowly:
-- GitLab version upgrades
-- System package updates
-- Temporary files
+| Team Size | Boot | Config | Logs | Data | Total |
+|-----------|------|--------|------|------|-------|
+| 1-10 users | 20G | 2G | 10G | 50G | 82G |
+| 10-50 users | 25G | 3G | 15G | 150G | 193G |
+| 50+ users | 30G | 5G | 20G | 300G | 355G |
 
-### Monitoring Storage Usage
+**Example**:
+```bash
+# Small team
+--storage-mode advanced --bootdisk 20 --configdisk 2 --logdisk 10 --datadisk 50
 
+# Medium team
+--storage-mode advanced --bootdisk 25 --configdisk 3 --logdisk 15 --datadisk 150
+
+# Large team
+--storage-mode advanced --bootdisk 30 --configdisk 5 --logdisk 20 --datadisk 300
+```
+
+**Monitoring**:
 ```bash
 # Check all volumes
 pct exec <VMID> -- df -h
 
 # Check specific volume
 pct exec <VMID> -- df -h /var/opt/gitlab
-
-# Check largest directories
-pct exec <VMID> -- du -sh /var/opt/gitlab/*
-
-# Check repository sizes
-pct exec <VMID> -- du -sh /var/opt/gitlab/git-data/repositories/*
 ```
 
-### Expanding Storage
-
-If you run out of space, you can expand LVM volumes:
-
+**Expanding** (per volume):
 ```bash
-# Extend the LV (add 50GB to data disk)
+# Extend data volume (add 50GB)
 lvextend -L +50G /dev/pve/vm-<VMID>-gitlab-opt
-
-# Resize the filesystem
 pct exec <VMID> -- resize2fs /dev/mapper/pve-vm--<VMID>--gitlab--opt
 
-# Verify new size
-pct exec <VMID> -- df -h /var/opt/gitlab
+# Extend log volume (add 10GB)
+lvextend -L +10G /dev/pve/vm-<VMID>-gitlab-log
+pct exec <VMID> -- resize2fs /dev/mapper/pve-vm--<VMID>--gitlab--log
 ```
+
+---
+
+### Migration: Advanced → Simple
+
+If you have an existing Advanced Mode installation and want to consolidate:
+
+**⚠️ Warning**: Backup first!
+
+```bash
+# 1. Backup GitLab
+pct exec <VMID> -- gitlab-backup create
+
+# 2. Stop container
+pct stop <VMID>
+
+# 3. Remove mount points from config
+vi /etc/pve/lxc/<VMID>.conf
+# Delete lines: mp0, mp1, mp2
+
+# 4. Start and reconfigure
+pct start <VMID>
+pct exec <VMID> -- gitlab-ctl reconfigure
+
+# 5. Remove old LVs and expand root
+lvremove -f /dev/pve/vm-<VMID>-gitlab-etc
+lvremove -f /dev/pve/vm-<VMID>-gitlab-log
+lvremove -f /dev/pve/vm-<VMID>-gitlab-opt
+
+# 6. Expand root with freed space
+pct stop <VMID>
+lvextend -L +15G /dev/pve/vm-<VMID>-disk-0
+e2fsck -f /dev/pve/vm-<VMID>-disk-0
+resize2fs /dev/pve/vm-<VMID>-disk-0
+pct start <VMID>
+```
+
+See `gitlab/GITLAB_STORAGE_CONSOLIDATION.md` for detailed migration guide.
+
+---
 
 ### Storage Best Practices
 
 1. **Monitor regularly** - Set up alerts for 80% disk usage
-2. **Plan for growth** - Estimate 20-30% annual growth for data disk
+2. **Plan for growth** - Estimate 20-30% annual growth for data
 3. **Clean up regularly** - Remove old CI/CD artifacts and logs
 4. **Use backup compression** - Saves significant space
-5. **Consider separate storage** - Use dedicated storage for large teams
 
 ### Cleanup Commands
 
@@ -343,12 +562,149 @@ pct exec <VMID> -- gitlab-rake gitlab:cleanup:orphan_registry_uploads
 
 ## 📖 Usage Examples
 
-### Example 1: Basic Internal GitLab Server
+### Example 1: Small Team - Simple Mode (Recommended)
 
-**Scenario**: Small team (5-10 users), internal network only
+**Scenario**: Small team (5-10 users), internal network, want simplicity
 
 ```bash
 ./pve-secure-gitlab-lxc.sh \
+  --vmid 110 \
+  --hostname gitlab \
+  --cpu 4 \
+  --ram 8192 \
+  --storage-mode simple \
+  --rootfs-size 50 \
+  --ip 192.168.1.110/24 \
+  --gateway 192.168.1.1 \
+  --dns 8.8.8.8 \
+  --url https://gitlab.local \
+  --storage local-lvm
+```
+
+**Result**:
+- Container ID: 110
+- Single 50GB root filesystem
+- All GitLab data in one place
+- Easy to manage and expand
+- Perfect for small teams
+
+---
+
+### Example 2: Medium Team - Simple Mode
+
+**Scenario**: Medium team (20-50 users), moderate CI/CD usage
+
+```bash
+./pve-secure-gitlab-lxc.sh \
+  --vmid 120 \
+  --hostname gitlab-dev \
+  --cpu 6 \
+  --ram 12288 \
+  --storage-mode simple \
+  --rootfs-size 100 \
+  --ip 192.168.1.120/24 \
+  --gateway 192.168.1.1 \
+  --dns 8.8.8.8 \
+  --url https://gitlab.dev.local \
+  --storage local-lvm
+```
+
+**Result**:
+- Container ID: 120
+- 6 CPU cores for better performance
+- 12GB RAM for active development
+- 100GB total storage
+- Suitable for active development teams
+
+---
+
+### Example 3: Enterprise - Advanced Mode
+
+**Scenario**: Enterprise deployment with compliance requirements
+
+```bash
+./pve-secure-gitlab-lxc.sh \
+  --vmid 130 \
+  --hostname gitlab-prod \
+  --cpu 8 \
+  --ram 16384 \
+  --storage-mode advanced \
+  --bootdisk 30 \
+  --datadisk 300 \
+  --logdisk 20 \
+  --configdisk 5 \
+  --ip 192.168.1.130/24 \
+  --gateway 192.168.1.1 \
+  --dns 8.8.8.8 \
+  --url https://gitlab.company.com \
+  --storage local-lvm
+```
+
+**Result**:
+- Container ID: 130
+- Separate LVM volumes for granular control
+- Independent snapshots per volume
+- Meets compliance requirements
+- Suitable for enterprise deployments
+
+---
+
+### Example 4: v1.0.0 Compatibility
+
+**Scenario**: Existing automation scripts from v1.0.0
+
+```bash
+# Old v1.0.0 command still works!
+./pve-secure-gitlab-lxc.sh \
+  --vmid 140 \
+  --hostname gitlab \
+  --cpu 4 \
+  --ram 8192 \
+  --bootdisk 20 \
+  --datadisk 100 \
+  --logdisk 10 \
+  --configdisk 2 \
+  --ip 192.168.1.140/24 \
+  --gateway 192.168.1.1 \
+  --dns 8.8.8.8 \
+  --url https://gitlab.local \
+  --storage local-lvm
+```
+
+**Result**:
+- Automatically uses Advanced Mode
+- Backward compatible with v1.0.0
+- No changes needed to existing scripts
+
+---
+
+### Example 5: Public Deployment with Let's Encrypt
+
+**Scenario**: Public-facing GitLab with Let's Encrypt SSL
+
+```bash
+./pve-secure-gitlab-lxc.sh \
+  --vmid 150 \
+  --hostname gitlab \
+  --cpu 4 \
+  --ram 8192 \
+  --storage-mode simple \
+  --rootfs-size 100 \
+  --ip 203.0.113.150/24 \
+  --gateway 203.0.113.1 \
+  --dns 8.8.8.8 \
+  --url https://gitlab.example.com \
+  --storage local-lvm \
+  --ssl-type letsencrypt
+```
+
+**Result**:
+- Public-facing GitLab
+- Let's Encrypt SSL certificate
+- Auto-renewal every 90 days
+- Requires public domain and open ports 80/443
+
+---
   --vmid 200 \
   --hostname gitlab-internal \
   --cpu 4 \
@@ -373,166 +729,52 @@ pct exec <VMID> -- gitlab-rake gitlab:cleanup:orphan_registry_uploads
 
 ---
 
-### Example 2: High-Performance GitLab for Development Team
+## ✅ Quality Assurance
 
-**Scenario**: Medium team (20-50 users), heavy CI/CD usage
+### Manual Verification
 
-```bash
-./pve-secure-gitlab-lxc.sh \
-  --vmid 130 \
-  --hostname gitlab-dev \
-  --cpu 8 \
-  --ram 16384 \
-  --bootdisk 30 \
-  --datadisk 200 \
-  --logdisk 20 \
-  --configdisk 5 \
-  --ip 192.168.1.130/24 \
-  --gateway 192.168.1.1 \
-  --dns 8.8.8.8 \
-  --url https://gitlab.dev.company.local \
-  --storage local-lvm \
-  --bridge vmbr0
-```
+This script has been manually verified through:
 
-**Result**:
-- Container ID: 300
-- 8 CPU cores for faster CI/CD pipelines
-- 16GB RAM for better performance
-- 200GB data storage for large repositories
-- Suitable for active development teams
+**Installation Testing**:
+- ✅ Fresh installation on Proxmox VE 8.x
+- ✅ Ubuntu 24.04 LXC template compatibility
+- ✅ Both Simple and Advanced storage modes
+- ✅ Interactive and non-interactive modes
+- ✅ Self-signed and Let's Encrypt SSL configurations
 
----
+**Storage Testing**:
+- ✅ Simple Mode: Single root filesystem (30GB, 50GB, 100GB)
+- ✅ Advanced Mode: Separate LVM volumes (various sizes)
+- ✅ Storage expansion procedures
+- ✅ Migration from Advanced to Simple mode
 
-### Example 3: Dual-Network GitLab (Internal + External)
+**Security Verification**:
+- ✅ Unprivileged container isolation
+- ✅ SSL/TLS configuration (TLS 1.2/1.3)
+- ✅ Security headers (HSTS, X-Frame-Options, CSP)
+- ✅ UFW firewall rules
+- ✅ Rate limiting configuration
 
-**Scenario**: GitLab accessible from both internal network and internet
+**Compatibility Testing**:
+- ✅ Backward compatibility with v1.0.0 parameters
+- ✅ Multiple network bridges (vmbr0, vmbr1, vmbr3)
+- ✅ Specific GitLab version installation
+- ✅ Cleanup and reinstall scenarios
 
-```bash
-# First, create with internal network
-./pve-secure-gitlab-lxc.sh \
-  --vmid 140 \
-  --hostname gitlab-public \
-  --cpu 6 \
-  --ram 12288 \
-  --bootdisk 25 \
-  --datadisk 150 \
-  --logdisk 15 \
-  --configdisk 3 \
-  --ip 192.168.1.140/24 \
-  --gateway 192.168.1.1 \
-  --dns 8.8.8.8 \
-  --url https://gitlab.example.com \
-  --storage local-lvm \
-  --bridge vmbr0
+**Real-World Usage**:
+- ✅ Production deployment on internal network
+- ✅ Fresh installation with Simple Mode tested and working
+- ✅ Fresh installation with Advanced Mode tested and working
+- ✅ GitLab CE services operational (nginx, postgresql, redis, sidekiq, etc.)
+- ✅ Manual migration from Advanced to Simple mode documented (see Migration Guide)
 
-# After installation, add external network interface
-pct set 400 -net1 name=eth1,bridge=vmbr1,ip=203.0.113.140/24,gw=203.0.113.1,type=veth
-```
-
-**Result**:
-- Container ID: 400
-- Internal IP: 192.168.1.140 (vmbr0)
-- External IP: 203.0.113.140 (vmbr1)
-- Accessible from both networks
-- Configure firewall rules for external access
-
----
-
-### Example 4: Specific GitLab Version Installation
-
-**Scenario**: Need specific GitLab version for compatibility
+### Syntax Validation
 
 ```bash
-./pve-secure-gitlab-lxc.sh \
-  --vmid 150 \
-  --hostname gitlab-legacy \
-  --cpu 4 \
-  --ram 8192 \
-  --bootdisk 20 \
-  --datadisk 100 \
-  --logdisk 10 \
-  --configdisk 2 \
-  --ip 192.168.1.150/24 \
-  --gateway 192.168.1.1 \
-  --dns 8.8.8.8 \
-  --url https://gitlab-legacy.local \
-  --storage local-lvm \
-  --bridge vmbr0 \
-  --version 16.8.1
+# Script passes bash syntax check
+bash -n pve-secure-gitlab-lxc.sh
+# ✅ No syntax errors
 ```
-
-**Result**:
-- Installs GitLab CE version 16.8.1 specifically
-- Useful for maintaining compatibility with existing integrations
-- Can upgrade later using standard GitLab upgrade procedures
-
----
-
-### Example 5: Cleanup and Reinstall
-
-**Scenario**: Previous installation failed, need to cleanup and retry
-
-```bash
-./pve-secure-gitlab-lxc.sh \
-  --vmid 125 \
-  --hostname gitlab-retry \
-  --cpu 4 \
-  --ram 8192 \
-  --bootdisk 20 \
-  --datadisk 100 \
-  --logdisk 10 \
-  --configdisk 2 \
-  --ip 192.168.1.125/24 \
-  --gateway 192.168.1.1 \
-  --dns 8.8.8.8 \
-  --url https://gitlab.example.com \
-  --storage local-lvm \
-  --bridge vmbr0 \
-  --force-cleanup
-```
-
-**Result**:
-- Automatically stops and removes existing container 110
-- Removes all associated LVs (vm-110-gitlab-*)
-- Performs fresh installation
-- No manual cleanup required
-
----
-
-### Example 6: Multiple GitLab Instances
-
-**Scenario**: Separate GitLab instances for different departments
-
-```bash
-# Production GitLab
-./pve-secure-gitlab-lxc.sh \
-  --vmid 170 --hostname gitlab-prod --cpu 8 --ram 16384 \
-  --bootdisk 30 --datadisk 300 --logdisk 20 --configdisk 5 \
-  --ip 192.168.1.170/24 --gateway 192.168.1.1 --dns 8.8.8.8 \
-  --url https://gitlab-prod.company.local --storage local-lvm --bridge vmbr0
-
-# Development GitLab
-./pve-secure-gitlab-lxc.sh \
-  --vmid 180 --hostname gitlab-dev --cpu 4 --ram 8192 \
-  --bootdisk 20 --datadisk 100 --logdisk 10 --configdisk 2 \
-  --ip 192.168.1.180/24 --gateway 192.168.1.1 --dns 8.8.8.8 \
-  --url https://gitlab-dev.company.local --storage local-lvm --bridge vmbr0
-
-# Testing GitLab
-./pve-secure-gitlab-lxc.sh \
-  --vmid 190 --hostname gitlab-test --cpu 2 --ram 4096 \
-  --bootdisk 15 --datadisk 50 --logdisk 5 --configdisk 1 \
-  --ip 192.168.1.190/24 --gateway 192.168.1.1 --dns 8.8.8.8 \
-  --url https://gitlab-test.company.local --storage local-lvm --bridge vmbr0
-```
-
-**Result**:
-- Three separate GitLab instances
-- Production: High resources for critical workloads
-- Development: Medium resources for active development
-- Testing: Minimal resources for testing purposes
-- Each instance completely isolated
 
 ---
 
@@ -947,10 +1189,19 @@ If this script saved you time and effort, consider buying me a coffee!
 
 ---
 
-**Version**: 1.0.0  
-**Last Updated**: 2025-01-04  
+**Version**: 1.1.0  
+**Last Updated**: 2026-01-11  
 **Tested On**: Proxmox VE 8.x with Ubuntu 24.04 LXC
 
 ## Changelog
 
 See `CHANGELOG.md` for version history and changes.
+
+## What's New in v1.1.0
+
+- ⭐ **Simple Storage Mode** - New default, single root filesystem
+- 🔧 **Advanced Storage Mode** - Previous separate LVM volumes approach (still available)
+- 📊 **Storage Mode Selection** - Interactive prompt to choose your preferred mode
+- 📝 **Improved Documentation** - Clear comparison and migration guide
+
+See `RELEASE_NOTES_v1.1.0.md` for detailed information.

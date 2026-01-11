@@ -3,6 +3,7 @@
 # GitLab CE Secure Installation Script for Proxmox LXC
 # Military-Grade Security Standards - Internal Deployment
 #
+# Version: 1.1.0
 # Author: Joe @ hiall-fyi
 # GitHub: https://github.com/hiall-fyi
 # Support: https://buymeacoffee.com/hiallfyi
@@ -14,6 +15,8 @@
 # 4. Security Hardening Configuration
 # 5. Complete Error Handling
 # 6. Automatic Cleanup of Existing Resources
+# 7. Simple Mode (Single Root Filesystem) - NEW in v1.1.0
+# 8. Advanced Mode (Separate LVM Volumes) - NEW in v1.1.0
 #
 # Usage:
 #   Interactive Mode:  ./gitlab-ce-secure-install.sh
@@ -85,6 +88,7 @@ STORAGE=""
 BRIDGE="vmbr0"
 FORCE_CLEANUP=false
 SSL_TYPE="self-signed"  # Default to self-signed for internal use
+STORAGE_MODE="simple"   # NEW: simple (single root) or advanced (separate LVs)
 
 show_usage() {
     cat << EOF
@@ -93,26 +97,41 @@ Usage: $0 [OPTIONS]
 Interactive Mode (no arguments):
     $0
 
-Non-Interactive Mode:
+Non-Interactive Mode (Simple Storage - Recommended):
     $0 --vmid <id> --hostname <name> --cpu <cores> --ram <mb> \\
-       --bootdisk <gb> --datadisk <gb> --logdisk <gb> --configdisk <gb> \\
-       --ip <ip/mask> --gateway <ip> --dns <ip> --url <url> --storage <vg> \\
-       [--version <version>] [--bridge <bridge>] [--force-cleanup]
+       --storage-mode simple --rootfs-size <gb> \\
+       --ip <ip/mask> --gateway <ip> --dns <ip> --url <url> --storage <vg>
+
+Non-Interactive Mode (Advanced Storage):
+    $0 --vmid <id> --hostname <name> --cpu <cores> --ram <mb> \\
+       --storage-mode advanced --bootdisk <gb> --datadisk <gb> --logdisk <gb> --configdisk <gb> \\
+       --ip <ip/mask> --gateway <ip> --dns <ip> --url <url> --storage <vg>
 
 Required Options (Non-Interactive):
     --vmid <id>           Container ID (e.g., 110)
     --hostname <name>     Container hostname (e.g., gitlab)
     --cpu <cores>         Number of CPU cores (e.g., 4)
     --ram <mb>            RAM in MB (e.g., 8192)
-    --bootdisk <gb>       Boot disk size in GB (e.g., 20)
-    --datadisk <gb>       Data disk size in GB (e.g., 100)
-    --logdisk <gb>        Log disk size in GB (e.g., 10)
-    --configdisk <gb>     Config disk size in GB (e.g., 2)
     --ip <ip/mask>        Container IP with CIDR (e.g., 192.168.1.110/24)
     --gateway <ip>        Gateway IP (e.g., 192.168.1.1)
     --dns <ip>            DNS server IP (e.g., 8.8.8.8)
     --url <url>           GitLab URL (e.g., https://gitlab.example.com)
     --storage <vg>        LVM storage VG name (e.g., pve)
+
+Storage Mode Options:
+    --storage-mode <mode> Storage configuration mode (default: simple)
+                          simple   - Single root filesystem (recommended)
+                          advanced - Separate LVM volumes
+
+Simple Mode (Recommended):
+    --rootfs-size <gb>    Total root filesystem size in GB (e.g., 50)
+                          Includes OS + all GitLab data
+
+Advanced Mode:
+    --bootdisk <gb>       Boot disk size in GB (e.g., 20)
+    --datadisk <gb>       Data disk size in GB (e.g., 100)
+    --logdisk <gb>        Log disk size in GB (e.g., 10)
+    --configdisk <gb>     Config disk size in GB (e.g., 2)
 
 Optional:
     --version <version>   GitLab version (leave empty for latest, e.g., 16.8.1)
@@ -122,26 +141,32 @@ Optional:
     --help                Show this help message
 
 Examples:
-    # Interactive mode
+    # Interactive mode (recommended for first-time users)
     $0
 
-    # Non-interactive with latest GitLab
+    # Simple Mode - Single root filesystem (recommended)
     $0 --vmid 110 --hostname gitlab --cpu 4 --ram 8192 \\
-       --bootdisk 20 --datadisk 100 --logdisk 10 --configdisk 2 \\
+       --storage-mode simple --rootfs-size 50 \\
        --ip 192.168.1.110/24 --gateway 192.168.1.1 --dns 8.8.8.8 \\
-       --url https://gitlab.example.com --storage local-lvm --bridge vmbr0
+       --url https://gitlab.example.com --storage local-lvm
 
-    # Non-interactive with specific version and cleanup
+    # Advanced Mode - Separate LVM volumes
+    $0 --vmid 120 --hostname gitlab --cpu 4 --ram 8192 \\
+       --storage-mode advanced --bootdisk 20 --datadisk 100 --logdisk 10 --configdisk 2 \\
+       --ip 192.168.1.120/24 --gateway 192.168.1.1 --dns 8.8.8.8 \\
+       --url https://gitlab.example.com --storage local-lvm
+
+    # v1.0.0 compatibility (automatically uses Advanced Mode)
     $0 --vmid 110 --hostname gitlab --cpu 4 --ram 8192 \\
        --bootdisk 20 --datadisk 100 --logdisk 10 --configdisk 2 \\
        --ip 192.168.1.110/24 --gateway 192.168.1.1 --dns 8.8.8.8 \\
-       --url https://gitlab.example.com --storage local-lvm --version 16.8.1 --force-cleanup
+       --url https://gitlab.example.com --storage local-lvm
 
     # Public deployment with Let's Encrypt
-    $0 --vmid 110 --hostname gitlab --cpu 4 --ram 8192 \\
-       --bootdisk 20 --datadisk 100 --logdisk 10 --configdisk 2 \\
-       --ip 10.29.83.110/24 --gateway 10.29.83.253 --dns 8.8.8.8 \\
-       --url https://gitlab.example.com --storage pve --ssl-type letsencrypt --bridge vmbr1
+    $0 --vmid 130 --hostname gitlab --cpu 4 --ram 8192 \\
+       --storage-mode simple --rootfs-size 50 \\
+       --ip 10.29.83.130/24 --gateway 10.29.83.253 --dns 8.8.8.8 \\
+       --url https://gitlab.example.com --storage pve --ssl-type letsencrypt
 
 EOF
     exit 0
@@ -165,6 +190,15 @@ while [[ $# -gt 0 ]]; do
             ;;
         --ram)
             RAM="$2"
+            shift 2
+            ;;
+        --storage-mode)
+            # Normalize to lowercase and trim whitespace
+            STORAGE_MODE=$(echo "$2" | tr '[:upper:]' '[:lower:]' | xargs)
+            shift 2
+            ;;
+        --rootfs-size)
+            BOOTDISK="$2"
             shift 2
             ;;
         --bootdisk)
@@ -229,6 +263,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Backward compatibility: If old parameters detected, use Advanced Mode
+if [ -n "$OPT_SIZE" ] || [ -n "$LOG_SIZE" ] || [ -n "$ETC_SIZE" ]; then
+    if [ "$STORAGE_MODE" = "simple" ]; then
+        log_warn "Detected both Simple and Advanced mode parameters. Using Advanced Mode."
+    fi
+    STORAGE_MODE="advanced"
+    log_info "Detected v1.0.0 parameters, using Advanced Mode for backward compatibility"
+fi
+
 # ---------- Step 1: Update Proxmox Host System ----------
 log_step "Step 1: Updating Proxmox host system"
 
@@ -274,14 +317,68 @@ log_step "Collecting installation parameters..."
 
 if [ "$INTERACTIVE" = true ]; then
     echo ""
+    echo "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo "${GREEN}Storage Configuration Mode${NC}"
+    echo "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "Choose storage configuration:"
+    echo ""
+    echo "  ${GREEN}1. Simple Mode (Recommended)${NC} ⭐"
+    echo "     • Single root filesystem"
+    echo "     • All GitLab data on root"
+    echo "     • Easier management"
+    echo "     • Flexible space allocation"
+    echo "     • Best for most users"
+    echo ""
+    echo "  ${YELLOW}2. Advanced Mode${NC}"
+    echo "     • Separate LVM volumes"
+    echo "     • Granular control"
+    echo "     • Independent snapshots"
+    echo "     • More complex management"
+    echo ""
+    read -p "Select mode (1 or 2, default: 1): " MODE_CHOICE
+    MODE_CHOICE="${MODE_CHOICE:-1}"
+    
+    if [ "$MODE_CHOICE" = "2" ]; then
+        STORAGE_MODE="advanced"
+        log_info "Advanced Mode selected"
+    else
+        STORAGE_MODE="simple"
+        log_info "Simple Mode selected (recommended)"
+    fi
+    
+    echo ""
+    echo "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo "${GREEN}Container Configuration${NC}"
+    echo "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
     read -p "Container ID (e.g., 200): " VMID
     read -p "Container Name (e.g., gitlab): " HOSTNAME
     read -p "CPU Cores (e.g., 4): " CPU
     read -p "RAM in MB (e.g., 8192): " RAM
-    read -p "Boot Disk Size in GB (e.g., 20): " BOOTDISK
-    read -p "Data Disk Size in GB (e.g., 100): " OPT_SIZE
-    read -p "Log Disk Size in GB (e.g., 10): " LOG_SIZE
-    read -p "Config Disk Size in GB (e.g., 2): " ETC_SIZE
+    
+    if [ "$STORAGE_MODE" = "simple" ]; then
+        echo ""
+        echo "${GREEN}Simple Mode Storage:${NC}"
+        echo "  Recommended sizes:"
+        echo "  • Small team (1-10 users): 30-50 GB"
+        echo "  • Medium team (10-50 users): 50-100 GB"
+        echo "  • Large team (50+ users): 100-200 GB"
+        echo ""
+        read -p "Root Filesystem Size in GB (e.g., 50): " BOOTDISK
+    else
+        echo ""
+        echo "${YELLOW}Advanced Mode Storage:${NC}"
+        echo "  Separate volumes for granular control"
+        echo ""
+        read -p "Boot Disk Size in GB (e.g., 20): " BOOTDISK
+        read -p "Data Disk Size in GB (e.g., 100): " OPT_SIZE
+        read -p "Log Disk Size in GB (e.g., 10): " LOG_SIZE
+        read -p "Config Disk Size in GB (e.g., 2): " ETC_SIZE
+    fi
+    
+    echo ""
     read -p "Container IP (e.g., 192.168.1.200/24): " CT_IP
     read -p "Gateway (e.g., 192.168.1.1): " GATEWAY
     read -p "DNS Server (e.g., 8.8.8.8): " DNS
@@ -294,14 +391,23 @@ if [ "$INTERACTIVE" = true ]; then
     echo ""
 else
     # Validate required parameters in non-interactive mode
-    if [ -z "$VMID" ] || [ -z "$HOSTNAME" ] || [ -z "$CPU" ] || [ -z "$RAM" ] || \
-       [ -z "$BOOTDISK" ] || [ -z "$OPT_SIZE" ] || [ -z "$LOG_SIZE" ] || [ -z "$ETC_SIZE" ] || \
-       [ -z "$CT_IP" ] || [ -z "$GATEWAY" ] || [ -z "$DNS" ] || \
-       [ -z "$GITLAB_URL" ] || [ -z "$STORAGE" ]; then
-        log_error "Non-interactive mode requires all parameters. Use --help for usage."
-        exit 1
+    if [ "$STORAGE_MODE" = "simple" ]; then
+        if [ -z "$VMID" ] || [ -z "$HOSTNAME" ] || [ -z "$CPU" ] || [ -z "$RAM" ] || \
+           [ -z "$BOOTDISK" ] || [ -z "$CT_IP" ] || [ -z "$GATEWAY" ] || [ -z "$DNS" ] || \
+           [ -z "$GITLAB_URL" ] || [ -z "$STORAGE" ]; then
+            log_error "Simple Mode requires: --vmid, --hostname, --cpu, --ram, --rootfs-size, --ip, --gateway, --dns, --url, --storage"
+            exit 1
+        fi
+    else
+        if [ -z "$VMID" ] || [ -z "$HOSTNAME" ] || [ -z "$CPU" ] || [ -z "$RAM" ] || \
+           [ -z "$BOOTDISK" ] || [ -z "$OPT_SIZE" ] || [ -z "$LOG_SIZE" ] || [ -z "$ETC_SIZE" ] || \
+           [ -z "$CT_IP" ] || [ -z "$GATEWAY" ] || [ -z "$DNS" ] || \
+           [ -z "$GITLAB_URL" ] || [ -z "$STORAGE" ]; then
+            log_error "Advanced Mode requires: --vmid, --hostname, --cpu, --ram, --bootdisk, --datadisk, --logdisk, --configdisk, --ip, --gateway, --dns, --url, --storage"
+            exit 1
+        fi
     fi
-    log_info "Using Non-Interactive mode"
+    log_info "Using Non-Interactive mode with ${STORAGE_MODE} storage"
 fi
 
 echo ""
@@ -406,12 +512,34 @@ log_info "✓ URL format is valid"
 # ---------- Summary & Confirmation ----------
 log_step "Installation Configuration Summary"
 
-cat << EOF
+if [ "$STORAGE_MODE" = "simple" ]; then
+    cat << EOF
 ${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
   Container ID    : ${GREEN}${VMID}${NC}
   Hostname        : ${GREEN}${HOSTNAME}${NC}
   CPU Cores       : ${GREEN}${CPU}${NC}
   RAM             : ${GREEN}${RAM} MB${NC}
+  Storage Mode    : ${GREEN}Simple (Single Root Filesystem)${NC} ⭐
+  Root Size       : ${GREEN}${BOOTDISK} GB${NC}
+  IP Address      : ${GREEN}${CT_IP}${NC}
+  Gateway         : ${GREEN}${GATEWAY}${NC}
+  DNS             : ${GREEN}${DNS}${NC}
+  GitLab URL      : ${GREEN}${GITLAB_URL}${NC}
+  GitLab Version  : ${GREEN}${GITLAB_VERSION:-Latest Stable}${NC}
+  SSL Type        : ${GREEN}${SSL_TYPE}${NC}
+  Storage VG      : ${GREEN}${STORAGE}${NC}
+  Network Bridge  : ${GREEN}${BRIDGE}${NC}
+  Template        : ${GREEN}${TEMPLATE}${NC}
+${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+EOF
+else
+    cat << EOF
+${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+  Container ID    : ${GREEN}${VMID}${NC}
+  Hostname        : ${GREEN}${HOSTNAME}${NC}
+  CPU Cores       : ${GREEN}${CPU}${NC}
+  RAM             : ${GREEN}${RAM} MB${NC}
+  Storage Mode    : ${YELLOW}Advanced (Separate LVM Volumes)${NC}
   Boot Disk       : ${GREEN}${BOOTDISK} GB${NC}
   Data Disk       : ${GREEN}${OPT_SIZE} GB${NC}
   Log Disk        : ${GREEN}${LOG_SIZE} GB${NC}
@@ -427,6 +555,7 @@ ${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━�
   Template        : ${GREEN}${TEMPLATE}${NC}
 ${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 EOF
+fi
 
 echo ""
 
@@ -447,13 +576,14 @@ log_info "Creating Container $VMID..."
 
 # Add fingerprint/description to container (Markdown format for Proxmox Notes)
 INSTALL_DATE=$(date '+%Y-%m-%d %H:%M:%S')
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.1.0"
 SCRIPT_AUTHOR="Joe @ hiall-fyi"
 COFFEE_LINK="https://buymeacoffee.com/hiallfyi"
 GITHUB_LINK="https://github.com/hiall-fyi"
 
 # Create beautiful Markdown-formatted Notes for Proxmox UI
-FINGERPRINT="# 🚀 GitLab CE Secure Install
+if [ "$STORAGE_MODE" = "simple" ]; then
+    FINGERPRINT="# 🚀 GitLab CE Secure Install
 
 **Version:** ${SCRIPT_VERSION}  
 **Installed:** ${INSTALL_DATE}  
@@ -475,6 +605,47 @@ FINGERPRINT="# 🚀 GitLab CE Secure Install
 
 ## 📦 Storage Configuration
 
+**Mode:** Simple (Single Root Filesystem) ⭐  
+**Root Size:** ${BOOTDISK}G  
+**All GitLab data on root filesystem**
+
+---
+
+## 🔗 Links
+
+- **GitHub:** ${GITHUB_LINK}
+- **Support:** ${COFFEE_LINK}
+
+---
+
+*Enjoy this script? ☕*
+
+<a href=\"${COFFEE_LINK}\"><img src=\"https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png\" alt=\"Buy Me A Coffee\" height=\"60\" width=\"217\"></a>"
+else
+    FINGERPRINT="# 🚀 GitLab CE Secure Install
+
+**Version:** ${SCRIPT_VERSION}  
+**Installed:** ${INSTALL_DATE}  
+**Created by:** ${SCRIPT_AUTHOR}
+
+---
+
+## 🔒 Security Features
+
+✅ **Unprivileged Container** - Enhanced isolation  
+✅ **System Fully Updated** - Latest security patches  
+✅ **Self-Signed SSL** - 10-year validity  
+✅ **HTTPS Redirect** - Forced secure connections  
+✅ **Security Headers** - HSTS, X-Frame-Options, CSP  
+✅ **Rate Limiting** - DDoS protection  
+✅ **UFW Firewall** - Network security  
+
+---
+
+## 📦 Storage Configuration
+
+**Mode:** Advanced (Separate LVM Volumes)
+
 - **Config:** \`/etc/gitlab\` → \`/dev/${STORAGE}/vm-${VMID}-gitlab-etc\` (${ETC_SIZE}G)
 - **Logs:** \`/var/log/gitlab\` → \`/dev/${STORAGE}/vm-${VMID}-gitlab-log\` (${LOG_SIZE}G)
 - **Data:** \`/var/opt/gitlab\` → \`/dev/${STORAGE}/vm-${VMID}-gitlab-opt\` (${OPT_SIZE}G)
@@ -491,6 +662,7 @@ FINGERPRINT="# 🚀 GitLab CE Secure Install
 *Enjoy this script? ☕*
 
 <a href=\"${COFFEE_LINK}\"><img src=\"https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png\" alt=\"Buy Me A Coffee\" height=\"60\" width=\"217\"></a>"
+fi
 
 pct create "$VMID" "$TEMPLATE" \
   --hostname "$HOSTNAME" \
@@ -508,55 +680,64 @@ pct create "$VMID" "$TEMPLATE" \
 log_info "✓ Unprivileged Container created successfully"
 log_info "✓ Fingerprint added to container notes"
 
-# ---------- LV Helper Function ----------
-mk_lv_if_missing() {
-    local lv_name="$1"
-    local size_g="$2"
-    local lv_path="/dev/${STORAGE}/${lv_name}"
+# ---------- Storage Configuration ----------
+if [ "$STORAGE_MODE" = "advanced" ]; then
+    log_step "Configuring Advanced Mode storage (Separate LVM volumes)..."
+    
+    # ---------- LV Helper Function ----------
+    mk_lv_if_missing() {
+        local lv_name="$1"
+        local size_g="$2"
+        local lv_path="/dev/${STORAGE}/${lv_name}"
 
-    if lvdisplay "$lv_path" >/dev/null 2>&1; then
-        log_info "LV $lv_path already exists, skipping creation"
-    else
-        log_info "Creating LV $lv_path (${size_g}G)..."
-        lvcreate -L "${size_g}G" -n "$lv_name" "$STORAGE" || err "lvcreate failed: $lv_path"
-    fi
+        if lvdisplay "$lv_path" >/dev/null 2>&1; then
+            log_info "LV $lv_path already exists, skipping creation"
+        else
+            log_info "Creating LV $lv_path (${size_g}G)..."
+            lvcreate -L "${size_g}G" -n "$lv_name" "$STORAGE" || err "lvcreate failed: $lv_path"
+        fi
 
-    # Format if needed
-    if blkid -o value -s TYPE "$lv_path" >/dev/null 2>&1; then
-        local fs_type=$(blkid -o value -s TYPE "$lv_path")
-        log_info "LV $lv_path already formatted as: $fs_type"
-    else
-        log_info "Formatting $lv_path as ext4..."
-        wipefs -a "$lv_path" 2>/dev/null || true
-        mkfs.ext4 -F "$lv_path" >/dev/null || err "mkfs.ext4 failed: $lv_path"
-        log_info "✓ Formatting complete"
-    fi
-}
+        # Format if needed
+        if blkid -o value -s TYPE "$lv_path" >/dev/null 2>&1; then
+            local fs_type=$(blkid -o value -s TYPE "$lv_path")
+            log_info "LV $lv_path already formatted as: $fs_type"
+        else
+            log_info "Formatting $lv_path as ext4..."
+            wipefs -a "$lv_path" 2>/dev/null || true
+            mkfs.ext4 -F "$lv_path" >/dev/null || err "mkfs.ext4 failed: $lv_path"
+            log_info "✓ Formatting complete"
+        fi
+    }
 
-# ---------- Create LVs ----------
-log_step "Creating LVM volumes..."
+    # ---------- Create LVs ----------
+    log_info "Creating LVM volumes..."
 
-LV_ETC="vm-${VMID}-gitlab-etc"
-LV_LOG="vm-${VMID}-gitlab-log"
-LV_OPT="vm-${VMID}-gitlab-opt"
+    LV_ETC="vm-${VMID}-gitlab-etc"
+    LV_LOG="vm-${VMID}-gitlab-log"
+    LV_OPT="vm-${VMID}-gitlab-opt"
 
-mk_lv_if_missing "$LV_ETC" "$ETC_SIZE"
-mk_lv_if_missing "$LV_LOG" "$LOG_SIZE"
-mk_lv_if_missing "$LV_OPT" "$OPT_SIZE"
+    mk_lv_if_missing "$LV_ETC" "$ETC_SIZE"
+    mk_lv_if_missing "$LV_LOG" "$LOG_SIZE"
+    mk_lv_if_missing "$LV_OPT" "$OPT_SIZE"
 
-log_info "✓ All LVM volumes ready"
+    log_info "✓ All LVM volumes ready"
 
-# ---------- Attach LVs to Container ----------
-log_step "Attaching LVM volumes to container..."
+    # ---------- Attach LVs to Container ----------
+    log_info "Attaching LVM volumes to container..."
 
-# For unprivileged containers, we need to attach mount points BEFORE starting
-# But we need to ensure proper permissions
-pct set "$VMID" \
-  -mp0 "/dev/${STORAGE}/${LV_ETC},mp=/etc/gitlab,backup=0" \
-  -mp1 "/dev/${STORAGE}/${LV_LOG},mp=/var/log/gitlab,backup=0" \
-  -mp2 "/dev/${STORAGE}/${LV_OPT},mp=/var/opt/gitlab,backup=0" || err "Failed to attach LVM volumes"
+    # For unprivileged containers, we need to attach mount points BEFORE starting
+    # But we need to ensure proper permissions
+    pct set "$VMID" \
+      -mp0 "/dev/${STORAGE}/${LV_ETC},mp=/etc/gitlab,backup=0" \
+      -mp1 "/dev/${STORAGE}/${LV_LOG},mp=/var/log/gitlab,backup=0" \
+      -mp2 "/dev/${STORAGE}/${LV_OPT},mp=/var/opt/gitlab,backup=0" || err "Failed to attach LVM volumes"
 
-log_info "✓ LVM volumes attached successfully"
+    log_info "✓ LVM volumes attached successfully"
+else
+    log_step "Using Simple Mode storage (Single root filesystem)"
+    log_info "All GitLab data will be stored on root filesystem"
+    log_info "✓ No separate LVM volumes needed"
+fi
 
 # ---------- Start Container ----------
 log_step "Starting container..."
@@ -574,50 +755,63 @@ fi
 
 log_info "✓ Container is running"
 
-# ---------- CRITICAL: Prepare mount points on HOST for unprivileged container ----------
-log_step "Preparing GitLab directories for unprivileged container..."
+# ---------- Prepare GitLab directories ----------
+if [ "$STORAGE_MODE" = "advanced" ]; then
+    log_step "Preparing GitLab directories for unprivileged container (Advanced Mode)..."
 
-log_info "Setting ownership on HOST for unprivileged container UID mapping..."
+    log_info "Setting ownership on HOST for unprivileged container UID mapping..."
 
-# In unprivileged containers, root (UID 0) inside = UID 100000 on host
-# We need to temporarily mount the LVs on host, set ownership, then unmount
+    # In unprivileged containers, root (UID 0) inside = UID 100000 on host
+    # We need to temporarily mount the LVs on host, set ownership, then unmount
 
-# Create temporary mount points on host
-mkdir -p /tmp/gitlab-mount-{etc,log,opt}
+    # Create temporary mount points on host
+    mkdir -p /tmp/gitlab-mount-{etc,log,opt}
 
-# Mount, set ownership, unmount for each LV
-log_info "Processing /etc/gitlab volume..."
-mount "/dev/${STORAGE}/${LV_ETC}" /tmp/gitlab-mount-etc
-chown -R 100000:100000 /tmp/gitlab-mount-etc
-chmod 755 /tmp/gitlab-mount-etc
-umount /tmp/gitlab-mount-etc
+    # Mount, set ownership, unmount for each LV
+    log_info "Processing /etc/gitlab volume..."
+    mount "/dev/${STORAGE}/${LV_ETC}" /tmp/gitlab-mount-etc
+    chown -R 100000:100000 /tmp/gitlab-mount-etc
+    chmod 755 /tmp/gitlab-mount-etc
+    umount /tmp/gitlab-mount-etc
 
-log_info "Processing /var/log/gitlab volume..."
-mount "/dev/${STORAGE}/${LV_LOG}" /tmp/gitlab-mount-log
-chown -R 100000:100000 /tmp/gitlab-mount-log
-chmod 755 /tmp/gitlab-mount-log
-umount /tmp/gitlab-mount-log
+    log_info "Processing /var/log/gitlab volume..."
+    mount "/dev/${STORAGE}/${LV_LOG}" /tmp/gitlab-mount-log
+    chown -R 100000:100000 /tmp/gitlab-mount-log
+    chmod 755 /tmp/gitlab-mount-log
+    umount /tmp/gitlab-mount-log
 
-log_info "Processing /var/opt/gitlab volume..."
-mount "/dev/${STORAGE}/${LV_OPT}" /tmp/gitlab-mount-opt
-chown -R 100000:100000 /tmp/gitlab-mount-opt
-chmod 755 /tmp/gitlab-mount-opt
-umount /tmp/gitlab-mount-opt
+    log_info "Processing /var/opt/gitlab volume..."
+    mount "/dev/${STORAGE}/${LV_OPT}" /tmp/gitlab-mount-opt
+    chown -R 100000:100000 /tmp/gitlab-mount-opt
+    chmod 755 /tmp/gitlab-mount-opt
+    umount /tmp/gitlab-mount-opt
 
-# Cleanup temporary mount points
-rmdir /tmp/gitlab-mount-{etc,log,opt}
+    # Cleanup temporary mount points
+    rmdir /tmp/gitlab-mount-{etc,log,opt}
 
-log_info "✓ GitLab volumes prepared with correct UID mapping (100000:100000)"
+    log_info "✓ GitLab volumes prepared with correct UID mapping (100000:100000)"
 
-# Now create the mount point directories inside container
-log_info "Creating mount point directories inside container..."
-pct exec "$VMID" -- bash -c "
-    mkdir -p /etc/gitlab
-    mkdir -p /var/log/gitlab  
-    mkdir -p /var/opt/gitlab
-" || err "Failed to create mount point directories"
+    # Now create the mount point directories inside container
+    log_info "Creating mount point directories inside container..."
+    pct exec "$VMID" -- bash -c "
+        mkdir -p /etc/gitlab
+        mkdir -p /var/log/gitlab  
+        mkdir -p /var/opt/gitlab
+    " || err "Failed to create mount point directories"
 
-log_info "✓ Mount point directories created"
+    log_info "✓ Mount point directories created"
+else
+    log_step "Preparing GitLab directories (Simple Mode)..."
+    
+    # Simple mode: just create directories on root filesystem
+    pct exec "$VMID" -- bash -c "
+        mkdir -p /etc/gitlab
+        mkdir -p /var/log/gitlab  
+        mkdir -p /var/opt/gitlab
+    " || err "Failed to create GitLab directories"
+    
+    log_info "✓ GitLab directories created on root filesystem"
+fi
 
 # ---------- Step 1 (Container): Update System ----------
 log_step "Step 1 (Container): Updating container system"
@@ -711,8 +905,8 @@ if [ "$SSL_TYPE" = "self-signed" ]; then
         mkdir -p /etc/gitlab/ssl
         chmod 755 /etc/gitlab/ssl
         
-        # Generate self-signed certificate
-        openssl req -x509 -nodes -days 3650 -newkey rsa:4096 \
+        # Generate self-signed certificate (10-year validity)
+        openssl req -x509 -nodes -days 3650 \\ 3650 -newkey rsa:4096 \
             -keyout /etc/gitlab/ssl/${GITLAB_HOSTNAME}.key \
             -out /etc/gitlab/ssl/${GITLAB_HOSTNAME}.crt \
             -subj '/C=HK/ST=HK/L=HK/O=Internal/CN=${GITLAB_HOSTNAME}' \
@@ -858,7 +1052,8 @@ INITIAL_PASSWORD=$(pct exec "$VMID" -- bash -c "cat /etc/gitlab/initial_root_pas
 # ---------- Final Summary ----------
 log_step "Installation Complete!"
 
-cat << EOF
+if [ "$STORAGE_MODE" = "simple" ]; then
+    cat << EOF
 
 ${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${GREEN}                    GitLab CE Installation Successful!                ${NC}
@@ -871,6 +1066,76 @@ ${BLUE}📦 Container Information:${NC}
   • GitLab URL        : ${GREEN}${GITLAB_URL}${NC}
 
 ${BLUE}💾 Storage Configuration:${NC}
+  • Mode              : ${GREEN}Simple (Single Root Filesystem)${NC} ⭐
+  • Root Size         : ${GREEN}${BOOTDISK} GB${NC}
+  • All GitLab data on root filesystem
+
+${BLUE}🔐 Initial Login Credentials:${NC}
+  • Username          : ${GREEN}root${NC}
+  • Password          : ${YELLOW}${INITIAL_PASSWORD}${NC}
+  ${RED}⚠️  Please login immediately and change the password!${NC}
+
+${BLUE}🔒 Security Features:${NC}
+  ✅ Unprivileged Container
+  ✅ System Fully Updated
+  ✅ Self-Signed SSL Certificate (10-year validity)
+  ✅ HTTPS Forced Redirect
+  ✅ Security Headers (HSTS, X-Frame-Options, etc.)
+  ✅ Rate Limiting
+  ✅ UFW Firewall
+
+${BLUE}📝 Common Commands:${NC}
+  # Check GitLab status
+  ${GREEN}pct exec ${VMID} -- gitlab-ctl status${NC}
+
+  # Reconfigure GitLab
+  ${GREEN}pct exec ${VMID} -- gitlab-ctl reconfigure${NC}
+
+  # Restart GitLab
+  ${GREEN}pct exec ${VMID} -- gitlab-ctl restart${NC}
+
+  # View logs
+  ${GREEN}pct exec ${VMID} -- gitlab-ctl tail${NC}
+
+  # Enter container
+  ${GREEN}pct enter ${VMID}${NC}
+
+${BLUE}🔧 Next Steps:${NC}
+  1. Visit ${GREEN}${GITLAB_URL}${NC}
+  2. Login with root / ${INITIAL_PASSWORD}
+  3. ${RED}Change root password immediately${NC}
+  4. Set up 2FA (recommended)
+  5. Create users and projects
+  6. Configure SSH keys
+  7. Set up regular backups
+
+${BLUE}⚠️  SSL Certificate Note:${NC}
+  Since we're using a self-signed certificate, your browser will show a security warning.
+  For internal use, you can safely ignore this or add the certificate to your trusted store.
+  
+  Certificate location: ${GREEN}/etc/gitlab/ssl/${GITLAB_HOSTNAME}.crt${NC}
+
+${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+${YELLOW}Enjoy your GitLab CE! 🚀${NC}
+
+${BLUE}Created by:${NC} Joe @ hiall-fyi
+EOF
+else
+    cat << EOF
+
+${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${GREEN}                    GitLab CE Installation Successful!                ${NC}
+${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+${BLUE}📦 Container Information:${NC}
+  • Container ID      : ${GREEN}${VMID}${NC}
+  • Hostname          : ${GREEN}${HOSTNAME}${NC}
+  • IP Address        : ${GREEN}${CT_IP}${NC}
+  • GitLab URL        : ${GREEN}${GITLAB_URL}${NC}
+
+${BLUE}💾 Storage Configuration:${NC}
+  • Mode              : ${YELLOW}Advanced (Separate LVM Volumes)${NC}
   • /etc/gitlab       : ${GREEN}/dev/${STORAGE}/${LV_ETC}${NC} (${ETC_SIZE}G)
   • /var/log/gitlab   : ${GREEN}/dev/${STORAGE}/${LV_LOG}${NC} (${LOG_SIZE}G)
   • /var/opt/gitlab   : ${GREEN}/dev/${STORAGE}/${LV_OPT}${NC} (${OPT_SIZE}G)
@@ -925,6 +1190,8 @@ ${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━
 ${YELLOW}Enjoy your GitLab CE! 🚀${NC}
 
 ${BLUE}Created by:${NC} Joe @ hiall-fyi
+EOF
+fi
 ${BLUE}GitHub:${NC} ${GITHUB_LINK}
 ${BLUE}Support:${NC} ${COFFEE_LINK} ☕
 
