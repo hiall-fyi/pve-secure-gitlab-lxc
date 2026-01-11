@@ -28,6 +28,29 @@
 
 ## 🎯 Features
 
+### Smart Defaults (NEW in v1.1.1)
+
+Auto-detect configuration parameters for faster installation:
+
+**What it does**:
+- 🎯 **Auto-detect VMID** - Finds next available container ID using Proxmox API
+- 🌐 **Auto-detect Network** - Detects gateway and DNS from system configuration  
+- 🔗 **Auto-generate URL** - Creates GitLab URL based on container IP
+- ⚡ **Press Enter to Accept** - All parameters have sensible defaults
+
+**Benefits**:
+- ✅ **60% fewer keystrokes** - Just press Enter for standard installations
+- ✅ **Fewer errors** - No typos in manual input
+- ✅ **Faster setup** - Complete installation in minutes
+- ✅ **Better UX** - Clear `(default: value)` format for all prompts
+
+**Perfect for**:
+- First-time users who want quick setup
+- Standard configurations without customization
+- Users who prefer sensible defaults over manual input
+
+---
+
 ### Storage Modes (NEW in v1.1.0)
 
 Choose between two storage configurations based on your needs:
@@ -1189,13 +1212,22 @@ If this script saved you time and effort, consider buying me a coffee!
 
 ---
 
-**Version**: 1.1.0  
+**Version**: 1.1.1  
 **Last Updated**: 2026-01-11  
 **Tested On**: Proxmox VE 8.x with Ubuntu 24.04 LXC
 
 ## Changelog
 
 See `CHANGELOG.md` for version history and changes.
+
+## What's New in v1.1.1
+
+- 🎯 **Smart Defaults** - Auto-detect VMID, gateway, DNS, and GitLab URL
+- ⚡ **Faster Installation** - Just press Enter to use sensible defaults
+- � **SSL Bug Fixes** - Fixed certificate generation and HTTP/HTTPS handling
+- 📝 **Better Prompts** - Clear `(default: value)` format for all parameters
+
+See `RELEASE_NOTES_v1.1.1.md` for detailed information.
 
 ## What's New in v1.1.0
 

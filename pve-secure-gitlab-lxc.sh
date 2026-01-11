@@ -353,10 +353,19 @@ if [ "$INTERACTIVE" = true ]; then
     echo "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     
-    read -p "Container ID (e.g., 200): " VMID
-    read -p "Container Name (e.g., gitlab): " HOSTNAME
-    read -p "CPU Cores (e.g., 4): " CPU
-    read -p "RAM in MB (e.g., 8192): " RAM
+    # Smart Defaults - Auto-detect next available VMID
+    DEFAULT_VMID=$(pvesh get /cluster/nextid 2>/dev/null || echo "110")
+    read -p "Container ID (default: ${DEFAULT_VMID}): " VMID
+    VMID="${VMID:-$DEFAULT_VMID}"
+    
+    read -p "Container Name (default: gitlab): " HOSTNAME
+    HOSTNAME="${HOSTNAME:-gitlab}"
+    
+    read -p "CPU Cores (default: 4): " CPU
+    CPU="${CPU:-4}"
+    
+    read -p "RAM in MB (default: 8192): " RAM
+    RAM="${RAM:-8192}"
     
     if [ "$STORAGE_MODE" = "simple" ]; then
         echo ""
@@ -366,24 +375,47 @@ if [ "$INTERACTIVE" = true ]; then
         echo "  • Medium team (10-50 users): 50-100 GB"
         echo "  • Large team (50+ users): 100-200 GB"
         echo ""
-        read -p "Root Filesystem Size in GB (e.g., 50): " BOOTDISK
+        read -p "Root Filesystem Size in GB (default: 50): " BOOTDISK
+        BOOTDISK="${BOOTDISK:-50}"
     else
         echo ""
         echo "${YELLOW}Advanced Mode Storage:${NC}"
         echo "  Separate volumes for granular control"
         echo ""
-        read -p "Boot Disk Size in GB (e.g., 20): " BOOTDISK
-        read -p "Data Disk Size in GB (e.g., 100): " OPT_SIZE
-        read -p "Log Disk Size in GB (e.g., 10): " LOG_SIZE
-        read -p "Config Disk Size in GB (e.g., 2): " ETC_SIZE
+        read -p "Boot Disk Size in GB (default: 20): " BOOTDISK
+        BOOTDISK="${BOOTDISK:-20}"
+        
+        read -p "Data Disk Size in GB (default: 100): " OPT_SIZE
+        OPT_SIZE="${OPT_SIZE:-100}"
+        
+        read -p "Log Disk Size in GB (default: 10): " LOG_SIZE
+        LOG_SIZE="${LOG_SIZE:-10}"
+        
+        read -p "Config Disk Size in GB (default: 2): " ETC_SIZE
+        ETC_SIZE="${ETC_SIZE:-2}"
     fi
     
     echo ""
     read -p "Container IP (e.g., 192.168.1.200/24): " CT_IP
-    read -p "Gateway (e.g., 192.168.1.1): " GATEWAY
-    read -p "DNS Server (e.g., 8.8.8.8): " DNS
-    read -p "GitLab URL (e.g., https://gitlab.example.com): " GITLAB_URL
-    read -p "LVM Storage VG Name (e.g., pve): " STORAGE
+    
+    # Smart Defaults - Auto-detect gateway and DNS
+    DEFAULT_GATEWAY=$(ip route | grep default | awk '{print $3}' | head -n1)
+    read -p "Gateway (default: ${DEFAULT_GATEWAY}): " GATEWAY
+    GATEWAY="${GATEWAY:-$DEFAULT_GATEWAY}"
+    
+    DEFAULT_DNS=$(grep "^nameserver" /etc/resolv.conf | head -n1 | awk '{print $2}')
+    read -p "DNS Server (default: ${DEFAULT_DNS}): " DNS
+    DNS="${DNS:-$DEFAULT_DNS}"
+    
+    # Smart Defaults - Auto-generate GitLab URL from container IP
+    CT_IP_ONLY=$(echo "$CT_IP" | cut -d'/' -f1)
+    DEFAULT_URL="http://${CT_IP_ONLY}"
+    read -p "GitLab URL (default: ${DEFAULT_URL}): " GITLAB_URL
+    GITLAB_URL="${GITLAB_URL:-$DEFAULT_URL}"
+    
+    read -p "LVM Storage VG Name (default: pve): " STORAGE
+    STORAGE="${STORAGE:-pve}"
+    
     echo ""
     read -p "GitLab Version (leave empty for latest stable, or enter version like 16.8.1): " GITLAB_VERSION
     read -p "Network Bridge (default: vmbr0): " BRIDGE_INPUT
@@ -509,6 +541,14 @@ if ! [[ "$GITLAB_URL" =~ ^https?:// ]]; then
 fi
 log_info "✓ URL format is valid"
 
+# Auto-adjust SSL_TYPE based on URL protocol
+if [[ "$GITLAB_URL" =~ ^https:// ]] && [ "$SSL_TYPE" = "self-signed" ]; then
+    log_info "HTTPS URL detected, SSL_TYPE set to self-signed"
+elif [[ "$GITLAB_URL" =~ ^http:// ]] && [ "$SSL_TYPE" != "self-signed" ]; then
+    log_warn "HTTP URL detected, adjusting SSL_TYPE to self-signed"
+    SSL_TYPE="self-signed"
+fi
+
 # ---------- Summary & Confirmation ----------
 log_step "Installation Configuration Summary"
 
@@ -576,7 +616,7 @@ log_info "Creating Container $VMID..."
 
 # Add fingerprint/description to container (Markdown format for Proxmox Notes)
 INSTALL_DATE=$(date '+%Y-%m-%d %H:%M:%S')
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.1.1"
 SCRIPT_AUTHOR="Joe @ hiall-fyi"
 COFFEE_LINK="https://buymeacoffee.com/hiallfyi"
 GITHUB_LINK="https://github.com/hiall-fyi"
@@ -906,7 +946,7 @@ if [ "$SSL_TYPE" = "self-signed" ]; then
         chmod 755 /etc/gitlab/ssl
         
         # Generate self-signed certificate (10-year validity)
-        openssl req -x509 -nodes -days 3650 \\ 3650 -newkey rsa:4096 \
+        openssl req -x509 -nodes -days 3650 -newkey rsa:4096 \
             -keyout /etc/gitlab/ssl/${GITLAB_HOSTNAME}.key \
             -out /etc/gitlab/ssl/${GITLAB_HOSTNAME}.crt \
             -subj '/C=HK/ST=HK/L=HK/O=Internal/CN=${GITLAB_HOSTNAME}' \
@@ -1120,6 +1160,9 @@ ${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━
 ${YELLOW}Enjoy your GitLab CE! 🚀${NC}
 
 ${BLUE}Created by:${NC} Joe @ hiall-fyi
+${BLUE}GitHub:${NC} https://github.com/hiall-fyi/pve-secure-gitlab-lxc
+${BLUE}Support:${NC} https://buymeacoffee.com/hiallfyi ☕
+
 EOF
 else
     cat << EOF
@@ -1185,17 +1228,16 @@ ${BLUE}⚠️  SSL Certificate Note:${NC}
   
   Certificate location: ${GREEN}/etc/gitlab/ssl/${GITLAB_HOSTNAME}.crt${NC}
 
-${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━���━━━━━━━━━━━━━━━━━━━━━${NC}
 
 ${YELLOW}Enjoy your GitLab CE! 🚀${NC}
 
 ${BLUE}Created by:${NC} Joe @ hiall-fyi
-EOF
-fi
-${BLUE}GitHub:${NC} ${GITHUB_LINK}
-${BLUE}Support:${NC} ${COFFEE_LINK} ☕
+${BLUE}GitHub:${NC} https://github.com/hiall-fyi/pve-secure-gitlab-lxc
+${BLUE}Support:${NC} https://buymeacoffee.com/hiallfyi ☕
 
 EOF
+fi
 
 # ---------- Save installation log ----------
 LOG_FILE="/var/log/gitlab-ce-install-${VMID}.log"

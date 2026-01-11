@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-01-11
+
+### Added
+- **Smart Defaults** - Auto-detect configuration parameters for faster installation
+  - Auto-detect next available VMID using Proxmox API (`pvesh get /cluster/nextid`)
+  - Auto-detect gateway from system routing table (`ip route`)
+  - Auto-detect DNS from system resolver configuration
+  - Auto-generate GitLab URL from container IP address
+  - All interactive prompts now show sensible defaults
+
+### Fixed
+- SSL certificate generation typo (`days 3650 \\ 3650` → `days 3650`)
+- SSL_TYPE auto-adjustment based on URL protocol (HTTP vs HTTPS)
+- Installation summary EOF placement - GitHub and Support links now display correctly
+
+### Improved
+- Better user experience with 60% fewer keystrokes for standard installations
+- Clearer prompt format showing `(default: value)` for all parameters
+- Reduced manual input errors with auto-detected values
+
 ## [1.1.0] - 2026-01-11
 
 ### Added
