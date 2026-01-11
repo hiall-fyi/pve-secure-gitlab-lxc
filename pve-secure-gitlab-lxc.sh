@@ -625,7 +625,7 @@ log_info "Creating Container $VMID..."
 
 # Add fingerprint/description to container (Markdown format for Proxmox Notes)
 INSTALL_DATE=$(date '+%Y-%m-%d %H:%M:%S')
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.1.2"
 SCRIPT_AUTHOR="Joe @ hiall-fyi"
 COFFEE_LINK="https://buymeacoffee.com/hiallfyi"
 GITHUB_LINK="https://github.com/hiall-fyi"
@@ -1251,10 +1251,11 @@ ${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━
 ${YELLOW}Enjoy your GitLab CE! 🚀${NC}
 
 ${BLUE}Created by:${NC} Joe @ hiall-fyi
-EOF
-fi
 ${BLUE}GitHub:${NC} ${GITHUB_LINK}
 ${BLUE}Support:${NC} ${COFFEE_LINK} ☕
+
+EOF
+fi
 
 EOF
 
