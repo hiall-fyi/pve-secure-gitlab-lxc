@@ -1189,7 +1189,7 @@ If this script saved you time and effort, consider buying me a coffee!
 
 ---
 
-**Version**: 1.1.0  
+**Version**: 1.1.1  
 **Last Updated**: 2026-01-11  
 **Tested On**: Proxmox VE 8.x with Ubuntu 24.04 LXC
 
