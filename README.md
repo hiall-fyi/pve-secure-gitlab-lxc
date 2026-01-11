@@ -1197,6 +1197,15 @@ If this script saved you time and effort, consider buying me a coffee!
 
 See `CHANGELOG.md` for version history and changes.
 
+## What's New in v1.1.1
+
+- 🎯 **Smart Defaults** - Auto-detect VMID, gateway, DNS, and GitLab URL
+- ⚡ **Faster Installation** - Just press Enter to use sensible defaults
+- 🐛 **SSL Bug Fixes** - Fixed certificate generation and HTTP/HTTPS handling
+- 📝 **Better Prompts** - Clear `(default: value)` format for all parameters
+
+See `RELEASE_NOTES_v1.1.1.md` for detailed information.
+
 ## What's New in v1.1.0
 
 - ⭐ **Simple Storage Mode** - New default, single root filesystem

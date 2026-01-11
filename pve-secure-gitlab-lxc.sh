@@ -353,10 +353,19 @@ if [ "$INTERACTIVE" = true ]; then
     echo "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     
-    read -p "Container ID (e.g., 200): " VMID
-    read -p "Container Name (e.g., gitlab): " HOSTNAME
-    read -p "CPU Cores (e.g., 4): " CPU
-    read -p "RAM in MB (e.g., 8192): " RAM
+    # Find next available VMID
+    NEXT_VMID=$(pvesh get /cluster/nextid 2>/dev/null || echo "200")
+    read -p "Container ID (default: ${NEXT_VMID}): " VMID_INPUT
+    VMID="${VMID_INPUT:-$NEXT_VMID}"
+    
+    read -p "Container Name (default: gitlab): " HOSTNAME_INPUT
+    HOSTNAME="${HOSTNAME_INPUT:-gitlab}"
+    
+    read -p "CPU Cores (default: 4): " CPU_INPUT
+    CPU="${CPU_INPUT:-4}"
+    
+    read -p "RAM in MB (default: 8192): " RAM_INPUT
+    RAM="${RAM_INPUT:-8192}"
     
     if [ "$STORAGE_MODE" = "simple" ]; then
         echo ""
@@ -366,26 +375,50 @@ if [ "$INTERACTIVE" = true ]; then
         echo "  • Medium team (10-50 users): 50-100 GB"
         echo "  • Large team (50+ users): 100-200 GB"
         echo ""
-        read -p "Root Filesystem Size in GB (e.g., 50): " BOOTDISK
+        read -p "Root Filesystem Size in GB (default: 50): " BOOTDISK_INPUT
+        BOOTDISK="${BOOTDISK_INPUT:-50}"
     else
         echo ""
         echo "${YELLOW}Advanced Mode Storage:${NC}"
         echo "  Separate volumes for granular control"
         echo ""
-        read -p "Boot Disk Size in GB (e.g., 20): " BOOTDISK
-        read -p "Data Disk Size in GB (e.g., 100): " OPT_SIZE
-        read -p "Log Disk Size in GB (e.g., 10): " LOG_SIZE
-        read -p "Config Disk Size in GB (e.g., 2): " ETC_SIZE
+        read -p "Boot Disk Size in GB (default: 20): " BOOTDISK_INPUT
+        BOOTDISK="${BOOTDISK_INPUT:-20}"
+        
+        read -p "Data Disk Size in GB (default: 100): " OPT_SIZE_INPUT
+        OPT_SIZE="${OPT_SIZE_INPUT:-100}"
+        
+        read -p "Log Disk Size in GB (default: 10): " LOG_SIZE_INPUT
+        LOG_SIZE="${LOG_SIZE_INPUT:-10}"
+        
+        read -p "Config Disk Size in GB (default: 2): " ETC_SIZE_INPUT
+        ETC_SIZE="${ETC_SIZE_INPUT:-2}"
     fi
     
     echo ""
+    # Try to detect network configuration
+    DEFAULT_GW=$(ip route | grep default | awk '{print $3}' | head -n1)
+    DEFAULT_DNS="${DEFAULT_GW:-8.8.8.8}"
+    
     read -p "Container IP (e.g., 192.168.1.200/24): " CT_IP
-    read -p "Gateway (e.g., 192.168.1.1): " GATEWAY
-    read -p "DNS Server (e.g., 8.8.8.8): " DNS
-    read -p "GitLab URL (e.g., https://gitlab.example.com): " GITLAB_URL
-    read -p "LVM Storage VG Name (e.g., pve): " STORAGE
+    
+    read -p "Gateway (default: ${DEFAULT_GW:-192.168.1.1}): " GATEWAY_INPUT
+    GATEWAY="${GATEWAY_INPUT:-${DEFAULT_GW:-192.168.1.1}}"
+    
+    read -p "DNS Server (default: ${DEFAULT_DNS}): " DNS_INPUT
+    DNS="${DNS_INPUT:-$DEFAULT_DNS}"
+    
+    # Extract IP without CIDR for default URL
+    DEFAULT_IP=$(echo "$CT_IP" | cut -d'/' -f1)
+    read -p "GitLab URL (default: http://${DEFAULT_IP}): " GITLAB_URL_INPUT
+    GITLAB_URL="${GITLAB_URL_INPUT:-http://${DEFAULT_IP}}"
+    
+    read -p "LVM Storage VG Name (default: pve): " STORAGE_INPUT
+    STORAGE="${STORAGE_INPUT:-pve}"
+    
     echo ""
-    read -p "GitLab Version (leave empty for latest stable, or enter version like 16.8.1): " GITLAB_VERSION
+    read -p "GitLab Version (default: latest stable, or enter version like 16.8.1): " GITLAB_VERSION
+    
     read -p "Network Bridge (default: vmbr0): " BRIDGE_INPUT
     BRIDGE="${BRIDGE_INPUT:-vmbr0}"
     echo ""
@@ -508,6 +541,22 @@ if ! [[ "$GITLAB_URL" =~ ^https?:// ]]; then
     err "Invalid URL format. Must start with http:// or https://"
 fi
 log_info "✓ URL format is valid"
+
+# Auto-adjust SSL_TYPE based on GITLAB_URL protocol
+if [[ "$GITLAB_URL" =~ ^https:// ]]; then
+    # HTTPS URL - requires SSL
+    if [ "$SSL_TYPE" != "self-signed" ] && [ "$SSL_TYPE" != "letsencrypt" ]; then
+        SSL_TYPE="self-signed"  # Default to self-signed
+        log_info "HTTPS URL detected - SSL_TYPE set to: ${SSL_TYPE}"
+    fi
+else
+    # HTTP URL - no SSL needed
+    if [ "$SSL_TYPE" != "none" ]; then
+        log_warn "HTTP URL detected - SSL_TYPE changed from '${SSL_TYPE}' to 'none'"
+        SSL_TYPE="none"
+    fi
+fi
+log_info "✓ SSL configuration: ${SSL_TYPE}"
 
 # ---------- Summary & Confirmation ----------
 log_step "Installation Configuration Summary"
@@ -906,7 +955,7 @@ if [ "$SSL_TYPE" = "self-signed" ]; then
         chmod 755 /etc/gitlab/ssl
         
         # Generate self-signed certificate (10-year validity)
-        openssl req -x509 -nodes -days 3650 \\ 3650 -newkey rsa:4096 \
+        openssl req -x509 -nodes -days 3650 -newkey rsa:4096 \
             -keyout /etc/gitlab/ssl/${GITLAB_HOSTNAME}.key \
             -out /etc/gitlab/ssl/${GITLAB_HOSTNAME}.crt \
             -subj '/C=HK/ST=HK/L=HK/O=Internal/CN=${GITLAB_HOSTNAME}' \
@@ -917,11 +966,16 @@ if [ "$SSL_TYPE" = "self-signed" ]; then
     " || err "SSL certificate generation failed"
 
     log_info "✓ Self-signed SSL certificate generated"
-else
+elif [ "$SSL_TYPE" = "letsencrypt" ]; then
     log_step "Step 3: Let's Encrypt SSL certificate"
     log_info "Let's Encrypt is enabled - certificate will be obtained automatically"
     log_warn "⚠️  Make sure your domain points to this server's public IP!"
     log_warn "⚠️  Ports 80 and 443 must be accessible from the internet!"
+else
+    log_step "Step 3: SSL Configuration"
+    log_info "HTTP mode - no SSL certificate needed"
+    log_warn "⚠️  Using HTTP without SSL is not recommended for production!"
+    log_warn "⚠️  Consider using HTTPS with self-signed or Let's Encrypt certificate"
 fi
 
 # ---------- Step 6: Security Hardening ----------
@@ -932,6 +986,7 @@ log_info "Configuring GitLab security settings..."
 # Extract hostname for SSL configuration
 GITLAB_HOSTNAME=$(echo "$GITLAB_URL" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
 
+# Generate SSL configuration based on SSL_TYPE
 if [ "$SSL_TYPE" = "self-signed" ]; then
     # Self-signed certificate configuration
     SSL_CONFIG="
@@ -945,7 +1000,7 @@ nginx['ssl_prefer_server_ciphers'] = 'on'
 nginx['ssl_session_cache'] = 'shared:SSL:10m'
 nginx['ssl_session_timeout'] = '10m'
 "
-else
+elif [ "$SSL_TYPE" = "letsencrypt" ]; then
     # Let's Encrypt configuration
     SSL_CONFIG="
 # SSL Configuration (Let's Encrypt)
@@ -956,6 +1011,12 @@ nginx['ssl_prefer_server_ciphers'] = 'on'
 nginx['ssl_session_cache'] = 'shared:SSL:10m'
 nginx['ssl_session_timeout'] = '10m'
 # Let's Encrypt certificates are managed automatically
+"
+else
+    # HTTP mode - no SSL configuration
+    SSL_CONFIG="
+# HTTP Mode - No SSL
+# WARNING: This is not recommended for production use
 "
 fi
 

@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-01-11
+
+### Improved
+- **Interactive Mode UX** - Added smart defaults for all configuration parameters
+- Auto-detect next available VMID using Proxmox API
+- Auto-detect default gateway and DNS from system configuration
+- Auto-generate GitLab URL based on container IP
+- All parameters now have sensible defaults - just press Enter to accept
+- Only Container IP requires manual input (environment-specific)
+
+### Changed
+- Container ID: Auto-detects next available VMID (default)
+- Container Name: `gitlab` (default)
+- CPU Cores: `4` (default)
+- RAM: `8192` MB (default)
+- Root Filesystem Size: `50` GB for Simple Mode (default)
+- Gateway: Auto-detected from system (default)
+- DNS: Uses gateway IP or `8.8.8.8` (default)
+- GitLab URL: Auto-generated from container IP (default)
+- LVM Storage VG Name: `pve` (default)
+- Network Bridge: `vmbr0` (default)
+
+### Fixed
+- **SSL Certificate Bug** - Fixed typo in openssl command (`days 3650 \\ 3650` → `days 3650`)
+- **SSL/HTTP Mismatch** - Auto-adjust SSL_TYPE based on URL protocol (http:// → none, https:// → self-signed)
+- **Missing SSL Certificates** - Prevented SSL config being applied to HTTP URLs
+- Confusing prompts that appeared to have defaults but didn't
+- Users had to manually type all values even for standard configurations
+- No indication of recommended values for first-time users
+
+### User Experience
+- Installation time reduced significantly (fewer keystrokes)
+- Clearer prompts showing `(default: value)` format
+- Better first-time user experience with sensible defaults
+- Advanced users can still override any default value
+- Automatic SSL configuration based on URL protocol
+
 ## [1.1.0] - 2026-01-11
 
 ### Added
