@@ -1210,11 +1210,26 @@ If this script saved you time and effort, consider buying me a coffee!
 
 </div>
 
+
 ---
 
 **Version**: 1.1.1  
 **Last Updated**: 2026-01-11  
 **Tested On**: Proxmox VE 8.x with Ubuntu 24.04 LXC
+
+---
+
+## ⚖️ Disclaimer
+
+This project is not affiliated with, endorsed by, or connected to GitLab Inc. or Proxmox Server Solutions GmbH.
+
+- **GitLab** and the GitLab logo are registered trademarks of GitLab Inc.
+- **Proxmox** and the Proxmox logo are registered trademarks of Proxmox Server Solutions GmbH.
+- All product names, logos, and brands are property of their respective owners.
+
+This script is provided "as is" without warranty of any kind. Use at your own risk. The authors are not responsible for any damages or issues arising from the use of this software, including but not limited to data loss, security vulnerabilities, or system instability.
+
+This is an independent, community-developed project created to help Proxmox users deploy GitLab CE securely.
 
 ## Changelog
 
@@ -1224,7 +1239,7 @@ See `CHANGELOG.md` for version history and changes.
 
 - 🎯 **Smart Defaults** - Auto-detect VMID, gateway, DNS, and GitLab URL
 - ⚡ **Faster Installation** - Just press Enter to use sensible defaults
-- � **SSL Bug Fixes** - Fixed certificate generation and HTTP/HTTPS handling
+- 🔧 **SSL Bug Fixes** - Fixed certificate generation and HTTP/HTTPS handling
 - 📝 **Better Prompts** - Clear `(default: value)` format for all parameters
 
 See `RELEASE_NOTES_v1.1.1.md` for detailed information.
