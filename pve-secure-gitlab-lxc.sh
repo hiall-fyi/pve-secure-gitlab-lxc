@@ -336,7 +336,7 @@ if [ "$INTERACTIVE" = true ]; then
     echo "     • Independent snapshots"
     echo "     • More complex management"
     echo ""
-    read -p "Select mode (1 or 2, default: 1): " MODE_CHOICE
+    read -rp "Select mode (1 or 2, default: 1): " MODE_CHOICE
     MODE_CHOICE="${MODE_CHOICE:-1}"
     
     if [ "$MODE_CHOICE" = "2" ]; then
@@ -355,16 +355,16 @@ if [ "$INTERACTIVE" = true ]; then
     
     # Smart Defaults - Auto-detect next available VMID
     DEFAULT_VMID=$(pvesh get /cluster/nextid 2>/dev/null || echo "110")
-    read -p "Container ID (default: ${DEFAULT_VMID}): " VMID
+    read -rp "Container ID (default: ${DEFAULT_VMID}): " VMID
     VMID="${VMID:-$DEFAULT_VMID}"
     
-    read -p "Container Name (default: gitlab): " HOSTNAME
+    read -rp "Container Name (default: gitlab): " HOSTNAME
     HOSTNAME="${HOSTNAME:-gitlab}"
     
-    read -p "CPU Cores (default: 4): " CPU
+    read -rp "CPU Cores (default: 4): " CPU
     CPU="${CPU:-4}"
     
-    read -p "RAM in MB (default: 8192): " RAM
+    read -rp "RAM in MB (default: 8192): " RAM
     RAM="${RAM:-8192}"
     
     if [ "$STORAGE_MODE" = "simple" ]; then
@@ -375,50 +375,50 @@ if [ "$INTERACTIVE" = true ]; then
         echo "  • Medium team (10-50 users): 50-100 GB"
         echo "  • Large team (50+ users): 100-200 GB"
         echo ""
-        read -p "Root Filesystem Size in GB (default: 50): " BOOTDISK
+        read -rp "Root Filesystem Size in GB (default: 50): " BOOTDISK
         BOOTDISK="${BOOTDISK:-50}"
     else
         echo ""
         echo "${YELLOW}Advanced Mode Storage:${NC}"
         echo "  Separate volumes for granular control"
         echo ""
-        read -p "Boot Disk Size in GB (default: 20): " BOOTDISK
+        read -rp "Boot Disk Size in GB (default: 20): " BOOTDISK
         BOOTDISK="${BOOTDISK:-20}"
         
-        read -p "Data Disk Size in GB (default: 100): " OPT_SIZE
+        read -rp "Data Disk Size in GB (default: 100): " OPT_SIZE
         OPT_SIZE="${OPT_SIZE:-100}"
         
-        read -p "Log Disk Size in GB (default: 10): " LOG_SIZE
+        read -rp "Log Disk Size in GB (default: 10): " LOG_SIZE
         LOG_SIZE="${LOG_SIZE:-10}"
         
-        read -p "Config Disk Size in GB (default: 2): " ETC_SIZE
+        read -rp "Config Disk Size in GB (default: 2): " ETC_SIZE
         ETC_SIZE="${ETC_SIZE:-2}"
     fi
     
     echo ""
-    read -p "Container IP (e.g., 192.168.1.200/24): " CT_IP
+    read -rp "Container IP (e.g., 192.168.1.200/24): " CT_IP
     
     # Smart Defaults - Auto-detect gateway and DNS
     DEFAULT_GATEWAY=$(ip route | grep default | awk '{print $3}' | head -n1)
-    read -p "Gateway (default: ${DEFAULT_GATEWAY}): " GATEWAY
+    read -rp "Gateway (default: ${DEFAULT_GATEWAY}): " GATEWAY
     GATEWAY="${GATEWAY:-$DEFAULT_GATEWAY}"
     
     DEFAULT_DNS=$(grep "^nameserver" /etc/resolv.conf | head -n1 | awk '{print $2}')
-    read -p "DNS Server (default: ${DEFAULT_DNS}): " DNS
+    read -rp "DNS Server (default: ${DEFAULT_DNS}): " DNS
     DNS="${DNS:-$DEFAULT_DNS}"
     
     # Smart Defaults - Auto-generate GitLab URL from container IP
     CT_IP_ONLY=$(echo "$CT_IP" | cut -d'/' -f1)
     DEFAULT_URL="http://${CT_IP_ONLY}"
-    read -p "GitLab URL (default: ${DEFAULT_URL}): " GITLAB_URL
+    read -rp "GitLab URL (default: ${DEFAULT_URL}): " GITLAB_URL
     GITLAB_URL="${GITLAB_URL:-$DEFAULT_URL}"
     
-    read -p "LVM Storage VG Name (default: pve): " STORAGE
+    read -rp "LVM Storage VG Name (default: pve): " STORAGE
     STORAGE="${STORAGE:-pve}"
     
     echo ""
-    read -p "GitLab Version (leave empty for latest stable, or enter version like 16.8.1): " GITLAB_VERSION
-    read -p "Network Bridge (default: vmbr0): " BRIDGE_INPUT
+    read -rp "GitLab Version (leave empty for latest stable, or enter version like 16.8.1): " GITLAB_VERSION
+    read -rp "Network Bridge (default: vmbr0): " BRIDGE_INPUT
     BRIDGE="${BRIDGE_INPUT:-vmbr0}"
     echo ""
 else
@@ -489,7 +489,7 @@ if [ "$EXISTING_CONTAINER" = true ] || [ ${#EXISTING_LVS[@]} -gt 0 ]; then
     
     if [ "$INTERACTIVE" = true ]; then
         echo ""
-        read -p "Do you want to clean up these resources? (yes/no): " CLEANUP_CONFIRM
+        read -rp "Do you want to clean up these resources? (yes/no): " CLEANUP_CONFIRM
         if [[ "$CLEANUP_CONFIRM" == "yes" ]]; then
             SHOULD_CLEANUP=true
         else
@@ -600,7 +600,7 @@ fi
 echo ""
 
 if [ "$INTERACTIVE" = true ]; then
-    read -p "Confirm the above configuration is correct? (yes/no): " CONFIRM
+    read -rp "Confirm the above configuration is correct? (yes/no): " CONFIRM
     if [[ "$CONFIRM" != "yes" ]]; then
         log_warn "User cancelled installation."
         exit 0
@@ -616,7 +616,7 @@ log_info "Creating Container $VMID..."
 
 # Add fingerprint/description to container (Markdown format for Proxmox Notes)
 INSTALL_DATE=$(date '+%Y-%m-%d %H:%M:%S')
-SCRIPT_VERSION="1.1.1"
+SCRIPT_VERSION="1.2.0"
 SCRIPT_AUTHOR="Joe @ hiall-fyi"
 COFFEE_LINK="https://buymeacoffee.com/hiallfyi"
 GITHUB_LINK="https://github.com/hiall-fyi"
@@ -708,8 +708,8 @@ pct create "$VMID" "$TEMPLATE" \
   --hostname "$HOSTNAME" \
   --cores "$CPU" \
   --memory "$RAM" \
-  --rootfs local-lvm:${BOOTDISK} \
-  --net0 name=eth0,bridge=${BRIDGE},ip="${CT_IP}",gw="${GATEWAY}",type=veth \
+  --rootfs "local-lvm:${BOOTDISK}" \
+  --net0 "name=eth0,bridge=${BRIDGE},ip=${CT_IP},gw=${GATEWAY},type=veth" \
   --nameserver "$DNS" \
   --unprivileged 1 \
   --features nesting=1,keyctl=1 \
@@ -739,7 +739,8 @@ if [ "$STORAGE_MODE" = "advanced" ]; then
 
         # Format if needed
         if blkid -o value -s TYPE "$lv_path" >/dev/null 2>&1; then
-            local fs_type=$(blkid -o value -s TYPE "$lv_path")
+            local fs_type
+            fs_type=$(blkid -o value -s TYPE "$lv_path")
             log_info "LV $lv_path already formatted as: $fs_type"
         else
             log_info "Formatting $lv_path as ext4..."

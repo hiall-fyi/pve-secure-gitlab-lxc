@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-03-15
+
+### Added
+- **README Rewrite** — Complete restructure following tado_ce format with clean badge layout, collapsible sections, and streamlined content
+
+### Fixed
+- **SC2162** — All `read` commands now use `-r` flag to prevent backslash mangling (19 instances)
+- **SC2086** — Proper double quoting for `--rootfs` and `--net0` parameters to prevent word splitting
+- **SC2155** — Separated `local` declaration from assignment in `mk_lv_if_missing()` to avoid masking return values
+
+### Improved
+- Script now passes `shellcheck` with zero warnings
+- README uses `<details>` collapsible sections for examples, troubleshooting, and management commands
+- Added dynamic GitHub badges (stars, forks, issues, last commit)
+- Added "Why This Script?" section for better onboarding
+
 ## [1.1.1] - 2026-01-11
 
 ### Added
