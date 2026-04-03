@@ -3,7 +3,7 @@
 # GitLab CE Secure Installation Script for Proxmox LXC
 # Military-Grade Security Standards - Internal Deployment
 #
-# Version: 1.1.0
+# Version: 1.3.0
 # Author: Joe @ hiall-fyi
 # GitHub: https://github.com/hiall-fyi
 # Support: https://buymeacoffee.com/hiallfyi
@@ -53,6 +53,214 @@ err() {
     exit 1
 }
 
+# ---------- Output Helper Functions ----------
+
+print_config_summary() {
+    cat << EOF
+${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+  Container ID    : ${GREEN}${VMID}${NC}
+  Hostname        : ${GREEN}${HOSTNAME}${NC}
+  CPU Cores       : ${GREEN}${CPU}${NC}
+  RAM             : ${GREEN}${RAM} MB${NC}
+EOF
+    if [ "$STORAGE_MODE" = "simple" ]; then
+        cat << EOF
+  Storage Mode    : ${GREEN}Simple (Single Root Filesystem)${NC} ⭐
+  Root Size       : ${GREEN}${BOOTDISK} GB${NC}
+EOF
+    else
+        cat << EOF
+  Storage Mode    : ${YELLOW}Advanced (Separate LVM Volumes)${NC}
+  Boot Disk       : ${GREEN}${BOOTDISK} GB${NC}
+  Data Disk       : ${GREEN}${OPT_SIZE} GB${NC}
+  Log Disk        : ${GREEN}${LOG_SIZE} GB${NC}
+  Config Disk     : ${GREEN}${ETC_SIZE} GB${NC}
+EOF
+    fi
+    cat << EOF
+  IP Address      : ${GREEN}${CT_IP}${NC}
+  Gateway         : ${GREEN}${GATEWAY}${NC}
+  DNS             : ${GREEN}${DNS}${NC}
+  GitLab URL      : ${GREEN}${GITLAB_URL}${NC}
+  GitLab Version  : ${GREEN}${GITLAB_VERSION:-Latest Stable}${NC}
+  SSL Type        : ${GREEN}${SSL_TYPE}${NC}
+  Storage VG      : ${GREEN}${STORAGE}${NC}
+  Network Bridge  : ${GREEN}${BRIDGE}${NC}
+  Template        : ${GREEN}${TEMPLATE}${NC}
+${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+EOF
+}
+
+print_final_summary() {
+    cat << EOF
+
+${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${GREEN}                    GitLab CE Installation Successful!                ${NC}
+${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+${BLUE}📦 Container Information:${NC}
+  • Container ID      : ${GREEN}${VMID}${NC}
+  • Hostname          : ${GREEN}${HOSTNAME}${NC}
+  • IP Address        : ${GREEN}${CT_IP}${NC}
+  • GitLab URL        : ${GREEN}${GITLAB_URL}${NC}
+
+EOF
+
+    # Storage section — mode-specific
+    if [ "$STORAGE_MODE" = "simple" ]; then
+        cat << EOF
+${BLUE}💾 Storage Configuration:${NC}
+  • Mode              : ${GREEN}Simple (Single Root Filesystem)${NC} ⭐
+  • Root Size         : ${GREEN}${BOOTDISK} GB${NC}
+  • All GitLab data on root filesystem
+
+EOF
+    else
+        cat << EOF
+${BLUE}💾 Storage Configuration:${NC}
+  • Mode              : ${YELLOW}Advanced (Separate LVM Volumes)${NC}
+  • /etc/gitlab       : ${GREEN}/dev/${STORAGE}/${LV_ETC}${NC} (${ETC_SIZE}G)
+  • /var/log/gitlab   : ${GREEN}/dev/${STORAGE}/${LV_LOG}${NC} (${LOG_SIZE}G)
+  • /var/opt/gitlab   : ${GREEN}/dev/${STORAGE}/${LV_OPT}${NC} (${OPT_SIZE}G)
+
+EOF
+    fi
+
+    cat << EOF
+${BLUE}🔐 Initial Login Credentials:${NC}
+  • Username          : ${GREEN}root${NC}
+  • Password          : ${YELLOW}${INITIAL_PASSWORD}${NC}
+  ${RED}⚠️  Please login immediately and change the password!${NC}
+
+${BLUE}🔒 Security Features:${NC}
+  ✅ Unprivileged Container
+  ✅ System Fully Updated
+EOF
+
+    # SSL feature line — mode-specific
+    if [ "$SSL_TYPE" = "self-signed" ]; then
+        echo "  ✅ Self-Signed SSL Certificate (10-year validity)"
+    else
+        echo "  ✅ Let's Encrypt SSL Certificate (auto-renewal enabled)"
+    fi
+
+    cat << EOF
+  ✅ HTTPS Forced Redirect
+  ✅ Security Headers (HSTS, X-Frame-Options, etc.)
+  ✅ Rate Limiting
+  ✅ UFW Firewall
+
+${BLUE}📝 Common Commands:${NC}
+  # Check GitLab status
+  ${GREEN}pct exec ${VMID} -- gitlab-ctl status${NC}
+
+  # Reconfigure GitLab
+  ${GREEN}pct exec ${VMID} -- gitlab-ctl reconfigure${NC}
+
+  # Restart GitLab
+  ${GREEN}pct exec ${VMID} -- gitlab-ctl restart${NC}
+
+  # View logs
+  ${GREEN}pct exec ${VMID} -- gitlab-ctl tail${NC}
+
+  # Enter container
+  ${GREEN}pct enter ${VMID}${NC}
+
+${BLUE}🔧 Next Steps:${NC}
+  1. Visit ${GREEN}${GITLAB_URL}${NC}
+  2. Login with root / ${INITIAL_PASSWORD}
+  3. ${RED}Change root password immediately${NC}
+  4. Set up 2FA (recommended)
+  5. Create users and projects
+  6. Configure SSH keys
+  7. Set up regular backups
+
+EOF
+
+    # SSL note — mode-specific
+    if [ "$SSL_TYPE" = "self-signed" ]; then
+        cat << EOF
+${BLUE}⚠️  SSL Certificate Note:${NC}
+  Since we're using a self-signed certificate, your browser will show a security warning.
+  For internal use, you can safely ignore this or add the certificate to your trusted store.
+  
+  Certificate location: ${GREEN}/etc/gitlab/ssl/${GITLAB_HOSTNAME}.crt${NC}
+
+EOF
+    else
+        cat << EOF
+${BLUE}🔒 SSL Certificate Note:${NC}
+  Certificates are managed automatically by Let's Encrypt.
+  Auto-renewal is enabled. No manual action needed.
+
+EOF
+    fi
+
+    cat << EOF
+${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+${YELLOW}Enjoy your GitLab CE! 🚀${NC}
+
+${BLUE}Created by:${NC} Joe @ hiall-fyi
+${BLUE}GitHub:${NC} https://github.com/hiall-fyi/pve-secure-gitlab-lxc
+${BLUE}Support:${NC} https://buymeacoffee.com/hiallfyi ☕
+
+EOF
+}
+
+write_install_log() {
+    local log_file="/var/log/gitlab-ce-install-${VMID}.log"
+
+    cat > "$log_file" << EOFLOG
+GitLab CE Installation Log
+==========================
+Date: $(date)
+Container ID: ${VMID}
+Hostname: ${HOSTNAME}
+IP: ${CT_IP}
+GitLab URL: ${GITLAB_URL}
+GitLab Version: ${GITLAB_VERSION:-Latest Stable}
+Initial Root Password: ${INITIAL_PASSWORD}
+
+EOFLOG
+
+    # Storage section
+    if [ "$STORAGE_MODE" = "simple" ]; then
+        cat >> "$log_file" << EOFLOG
+Storage: Simple Mode (Single Root Filesystem)
+- Root Size: ${BOOTDISK}G
+
+EOFLOG
+    else
+        cat >> "$log_file" << EOFLOG
+Storage: Advanced Mode (Separate LVM Volumes)
+- /dev/${STORAGE}/${LV_ETC} -> /etc/gitlab (${ETC_SIZE}G)
+- /dev/${STORAGE}/${LV_LOG} -> /var/log/gitlab (${LOG_SIZE}G)
+- /dev/${STORAGE}/${LV_OPT} -> /var/opt/gitlab (${OPT_SIZE}G)
+
+EOFLOG
+    fi
+
+    # Security section — SSL type aware
+    local ssl_label="Self-Signed Certificate"
+    if [ "$SSL_TYPE" = "letsencrypt" ]; then
+        ssl_label="Let's Encrypt"
+    fi
+
+    cat >> "$log_file" << EOFLOG
+Security Features:
+- Unprivileged Container: Yes
+- SSL: ${ssl_label}
+- HTTPS Redirect: Enabled
+- Security Headers: Enabled
+- Rate Limiting: Enabled
+- Firewall: UFW Enabled
+
+EOFLOG
+
+    log_info "Installation log saved to: ${log_file}"
+}
+
 # ---------- Pre-flight Checks ----------
 log_step "Running pre-flight checks..."
 
@@ -71,6 +279,7 @@ log_info "✓ Proxmox VE environment confirmed"
 
 # ---------- Parse Command Line Arguments ----------
 INTERACTIVE=true
+SCRIPT_VERSION="1.3.0"
 VMID=""
 HOSTNAME=""
 CPU=""
@@ -92,6 +301,8 @@ STORAGE_MODE="simple"   # NEW: simple (single root) or advanced (separate LVs)
 
 show_usage() {
     cat << EOF
+GitLab CE Secure Install v${SCRIPT_VERSION}
+
 Usage: $0 [OPTIONS]
 
 Interactive Mode (no arguments):
@@ -316,6 +527,10 @@ log_info "✓ Using template: $TEMPLATE"
 log_step "Collecting installation parameters..."
 
 if [ "$INTERACTIVE" = true ]; then
+    echo ""
+    echo "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo "${GREEN}  🚀 GitLab CE Secure Install  v${SCRIPT_VERSION}${NC}"
+    echo "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo "${GREEN}Storage Configuration Mode${NC}"
@@ -552,50 +767,7 @@ fi
 # ---------- Summary & Confirmation ----------
 log_step "Installation Configuration Summary"
 
-if [ "$STORAGE_MODE" = "simple" ]; then
-    cat << EOF
-${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
-  Container ID    : ${GREEN}${VMID}${NC}
-  Hostname        : ${GREEN}${HOSTNAME}${NC}
-  CPU Cores       : ${GREEN}${CPU}${NC}
-  RAM             : ${GREEN}${RAM} MB${NC}
-  Storage Mode    : ${GREEN}Simple (Single Root Filesystem)${NC} ⭐
-  Root Size       : ${GREEN}${BOOTDISK} GB${NC}
-  IP Address      : ${GREEN}${CT_IP}${NC}
-  Gateway         : ${GREEN}${GATEWAY}${NC}
-  DNS             : ${GREEN}${DNS}${NC}
-  GitLab URL      : ${GREEN}${GITLAB_URL}${NC}
-  GitLab Version  : ${GREEN}${GITLAB_VERSION:-Latest Stable}${NC}
-  SSL Type        : ${GREEN}${SSL_TYPE}${NC}
-  Storage VG      : ${GREEN}${STORAGE}${NC}
-  Network Bridge  : ${GREEN}${BRIDGE}${NC}
-  Template        : ${GREEN}${TEMPLATE}${NC}
-${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
-EOF
-else
-    cat << EOF
-${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
-  Container ID    : ${GREEN}${VMID}${NC}
-  Hostname        : ${GREEN}${HOSTNAME}${NC}
-  CPU Cores       : ${GREEN}${CPU}${NC}
-  RAM             : ${GREEN}${RAM} MB${NC}
-  Storage Mode    : ${YELLOW}Advanced (Separate LVM Volumes)${NC}
-  Boot Disk       : ${GREEN}${BOOTDISK} GB${NC}
-  Data Disk       : ${GREEN}${OPT_SIZE} GB${NC}
-  Log Disk        : ${GREEN}${LOG_SIZE} GB${NC}
-  Config Disk     : ${GREEN}${ETC_SIZE} GB${NC}
-  IP Address      : ${GREEN}${CT_IP}${NC}
-  Gateway         : ${GREEN}${GATEWAY}${NC}
-  DNS             : ${GREEN}${DNS}${NC}
-  GitLab URL      : ${GREEN}${GITLAB_URL}${NC}
-  GitLab Version  : ${GREEN}${GITLAB_VERSION:-Latest Stable}${NC}
-  SSL Type        : ${GREEN}${SSL_TYPE}${NC}
-  Storage VG      : ${GREEN}${STORAGE}${NC}
-  Network Bridge  : ${GREEN}${BRIDGE}${NC}
-  Template        : ${GREEN}${TEMPLATE}${NC}
-${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
-EOF
-fi
+print_config_summary
 
 echo ""
 
@@ -616,79 +788,46 @@ log_info "Creating Container $VMID..."
 
 # Add fingerprint/description to container (Markdown format for Proxmox Notes)
 INSTALL_DATE=$(date '+%Y-%m-%d %H:%M:%S')
-SCRIPT_VERSION="1.2.0"
 SCRIPT_AUTHOR="Joe @ hiall-fyi"
 COFFEE_LINK="https://buymeacoffee.com/hiallfyi"
 GITHUB_LINK="https://github.com/hiall-fyi"
 
 # Create beautiful Markdown-formatted Notes for Proxmox UI
 if [ "$STORAGE_MODE" = "simple" ]; then
-    FINGERPRINT="# 🚀 GitLab CE Secure Install
-
-**Version:** ${SCRIPT_VERSION}  
-**Installed:** ${INSTALL_DATE}  
-**Created by:** ${SCRIPT_AUTHOR}
-
----
-
-## 🔒 Security Features
-
-✅ **Unprivileged Container** - Enhanced isolation  
-✅ **System Fully Updated** - Latest security patches  
-✅ **Self-Signed SSL** - 10-year validity  
-✅ **HTTPS Redirect** - Forced secure connections  
-✅ **Security Headers** - HSTS, X-Frame-Options, CSP  
-✅ **Rate Limiting** - DDoS protection  
-✅ **UFW Firewall** - Network security  
-
----
-
-## 📦 Storage Configuration
-
-**Mode:** Simple (Single Root Filesystem) ⭐  
+    STORAGE_SECTION="**Mode:** Simple (Single Root Filesystem) ⭐  
 **Root Size:** ${BOOTDISK}G  
-**All GitLab data on root filesystem**
-
----
-
-## 🔗 Links
-
-- **GitHub:** ${GITHUB_LINK}
-- **Support:** ${COFFEE_LINK}
-
----
-
-*Enjoy this script? ☕*
-
-<a href=\"${COFFEE_LINK}\"><img src=\"https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png\" alt=\"Buy Me A Coffee\" height=\"60\" width=\"217\"></a>"
+**All GitLab data on root filesystem**"
 else
-    FINGERPRINT="# 🚀 GitLab CE Secure Install
-
-**Version:** ${SCRIPT_VERSION}  
-**Installed:** ${INSTALL_DATE}  
-**Created by:** ${SCRIPT_AUTHOR}
-
----
-
-## 🔒 Security Features
-
-✅ **Unprivileged Container** - Enhanced isolation  
-✅ **System Fully Updated** - Latest security patches  
-✅ **Self-Signed SSL** - 10-year validity  
-✅ **HTTPS Redirect** - Forced secure connections  
-✅ **Security Headers** - HSTS, X-Frame-Options, CSP  
-✅ **Rate Limiting** - DDoS protection  
-✅ **UFW Firewall** - Network security  
-
----
-
-## 📦 Storage Configuration
-
-**Mode:** Advanced (Separate LVM Volumes)
+    STORAGE_SECTION="**Mode:** Advanced (Separate LVM Volumes)
 
 - **Config:** \`/etc/gitlab\` → \`/dev/${STORAGE}/vm-${VMID}-gitlab-etc\` (${ETC_SIZE}G)
 - **Logs:** \`/var/log/gitlab\` → \`/dev/${STORAGE}/vm-${VMID}-gitlab-log\` (${LOG_SIZE}G)
-- **Data:** \`/var/opt/gitlab\` → \`/dev/${STORAGE}/vm-${VMID}-gitlab-opt\` (${OPT_SIZE}G)
+- **Data:** \`/var/opt/gitlab\` → \`/dev/${STORAGE}/vm-${VMID}-gitlab-opt\` (${OPT_SIZE}G)"
+fi
+
+FINGERPRINT="# 🚀 GitLab CE Secure Install
+
+**Version:** ${SCRIPT_VERSION}  
+**Installed:** ${INSTALL_DATE}  
+**Created by:** ${SCRIPT_AUTHOR}
+
+---
+
+## 🔒 Security Features
+
+✅ **Unprivileged Container** - Enhanced isolation  
+✅ **System Fully Updated** - Latest security patches  
+✅ **Self-Signed SSL** - 10-year validity  
+✅ **HTTPS Redirect** - Forced secure connections  
+✅ **Security Headers** - HSTS, X-Frame-Options, CSP  
+✅ **Rate Limiting** - DDoS protection  
+✅ **UFW Firewall** - Network security  
+
+---
+
+## 📦 Storage Configuration
+
+${STORAGE_SECTION}
 
 ---
 
@@ -702,7 +841,6 @@ else
 *Enjoy this script? ☕*
 
 <a href=\"${COFFEE_LINK}\"><img src=\"https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png\" alt=\"Buy Me A Coffee\" height=\"60\" width=\"217\"></a>"
-fi
 
 pct create "$VMID" "$TEMPLATE" \
   --hostname "$HOSTNAME" \
@@ -934,11 +1072,11 @@ pct exec "$VMID" -- bash -c "$INSTALL_CMD" || err "GitLab CE installation failed
 log_info "✓ GitLab CE installed"
 
 # ---------- Step 3: SSL Configuration ----------
+# Extract hostname from URL (used by SSL config and security hardening)
+GITLAB_HOSTNAME=$(echo "$GITLAB_URL" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
+
 if [ "$SSL_TYPE" = "self-signed" ]; then
     log_step "Step 3: Configuring self-signed SSL certificate (internal use)"
-
-    # Extract hostname from URL
-    GITLAB_HOSTNAME=$(echo "$GITLAB_URL" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
 
     log_info "Generating self-signed certificate for ${GITLAB_HOSTNAME}..."
 
@@ -969,9 +1107,6 @@ fi
 log_step "Step 6: Applying security hardening configuration"
 
 log_info "Configuring GitLab security settings..."
-
-# Extract hostname for SSL configuration
-GITLAB_HOSTNAME=$(echo "$GITLAB_URL" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
 
 if [ "$SSL_TYPE" = "self-signed" ]; then
     # Self-signed certificate configuration
@@ -1093,181 +1228,10 @@ INITIAL_PASSWORD=$(pct exec "$VMID" -- bash -c "cat /etc/gitlab/initial_root_pas
 # ---------- Final Summary ----------
 log_step "Installation Complete!"
 
-if [ "$STORAGE_MODE" = "simple" ]; then
-    cat << EOF
-
-${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
-${GREEN}                    GitLab CE Installation Successful!                ${NC}
-${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
-
-${BLUE}📦 Container Information:${NC}
-  • Container ID      : ${GREEN}${VMID}${NC}
-  • Hostname          : ${GREEN}${HOSTNAME}${NC}
-  • IP Address        : ${GREEN}${CT_IP}${NC}
-  • GitLab URL        : ${GREEN}${GITLAB_URL}${NC}
-
-${BLUE}💾 Storage Configuration:${NC}
-  • Mode              : ${GREEN}Simple (Single Root Filesystem)${NC} ⭐
-  • Root Size         : ${GREEN}${BOOTDISK} GB${NC}
-  • All GitLab data on root filesystem
-
-${BLUE}🔐 Initial Login Credentials:${NC}
-  • Username          : ${GREEN}root${NC}
-  • Password          : ${YELLOW}${INITIAL_PASSWORD}${NC}
-  ${RED}⚠️  Please login immediately and change the password!${NC}
-
-${BLUE}🔒 Security Features:${NC}
-  ✅ Unprivileged Container
-  ✅ System Fully Updated
-  ✅ Self-Signed SSL Certificate (10-year validity)
-  ✅ HTTPS Forced Redirect
-  ✅ Security Headers (HSTS, X-Frame-Options, etc.)
-  ✅ Rate Limiting
-  ✅ UFW Firewall
-
-${BLUE}📝 Common Commands:${NC}
-  # Check GitLab status
-  ${GREEN}pct exec ${VMID} -- gitlab-ctl status${NC}
-
-  # Reconfigure GitLab
-  ${GREEN}pct exec ${VMID} -- gitlab-ctl reconfigure${NC}
-
-  # Restart GitLab
-  ${GREEN}pct exec ${VMID} -- gitlab-ctl restart${NC}
-
-  # View logs
-  ${GREEN}pct exec ${VMID} -- gitlab-ctl tail${NC}
-
-  # Enter container
-  ${GREEN}pct enter ${VMID}${NC}
-
-${BLUE}🔧 Next Steps:${NC}
-  1. Visit ${GREEN}${GITLAB_URL}${NC}
-  2. Login with root / ${INITIAL_PASSWORD}
-  3. ${RED}Change root password immediately${NC}
-  4. Set up 2FA (recommended)
-  5. Create users and projects
-  6. Configure SSH keys
-  7. Set up regular backups
-
-${BLUE}⚠️  SSL Certificate Note:${NC}
-  Since we're using a self-signed certificate, your browser will show a security warning.
-  For internal use, you can safely ignore this or add the certificate to your trusted store.
-  
-  Certificate location: ${GREEN}/etc/gitlab/ssl/${GITLAB_HOSTNAME}.crt${NC}
-
-${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
-
-${YELLOW}Enjoy your GitLab CE! 🚀${NC}
-
-${BLUE}Created by:${NC} Joe @ hiall-fyi
-${BLUE}GitHub:${NC} https://github.com/hiall-fyi/pve-secure-gitlab-lxc
-${BLUE}Support:${NC} https://buymeacoffee.com/hiallfyi ☕
-
-EOF
-else
-    cat << EOF
-
-${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
-${GREEN}                    GitLab CE Installation Successful!                ${NC}
-${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
-
-${BLUE}📦 Container Information:${NC}
-  • Container ID      : ${GREEN}${VMID}${NC}
-  • Hostname          : ${GREEN}${HOSTNAME}${NC}
-  • IP Address        : ${GREEN}${CT_IP}${NC}
-  • GitLab URL        : ${GREEN}${GITLAB_URL}${NC}
-
-${BLUE}💾 Storage Configuration:${NC}
-  • Mode              : ${YELLOW}Advanced (Separate LVM Volumes)${NC}
-  • /etc/gitlab       : ${GREEN}/dev/${STORAGE}/${LV_ETC}${NC} (${ETC_SIZE}G)
-  • /var/log/gitlab   : ${GREEN}/dev/${STORAGE}/${LV_LOG}${NC} (${LOG_SIZE}G)
-  • /var/opt/gitlab   : ${GREEN}/dev/${STORAGE}/${LV_OPT}${NC} (${OPT_SIZE}G)
-
-${BLUE}🔐 Initial Login Credentials:${NC}
-  • Username          : ${GREEN}root${NC}
-  • Password          : ${YELLOW}${INITIAL_PASSWORD}${NC}
-  ${RED}⚠️  Please login immediately and change the password!${NC}
-
-${BLUE}🔒 Security Features:${NC}
-  ✅ Unprivileged Container
-  ✅ System Fully Updated
-  ✅ Self-Signed SSL Certificate (10-year validity)
-  ✅ HTTPS Forced Redirect
-  ✅ Security Headers (HSTS, X-Frame-Options, etc.)
-  ✅ Rate Limiting
-  ✅ UFW Firewall
-
-${BLUE}📝 Common Commands:${NC}
-  # Check GitLab status
-  ${GREEN}pct exec ${VMID} -- gitlab-ctl status${NC}
-
-  # Reconfigure GitLab
-  ${GREEN}pct exec ${VMID} -- gitlab-ctl reconfigure${NC}
-
-  # Restart GitLab
-  ${GREEN}pct exec ${VMID} -- gitlab-ctl restart${NC}
-
-  # View logs
-  ${GREEN}pct exec ${VMID} -- gitlab-ctl tail${NC}
-
-  # Enter container
-  ${GREEN}pct enter ${VMID}${NC}
-
-${BLUE}🔧 Next Steps:${NC}
-  1. Visit ${GREEN}${GITLAB_URL}${NC}
-  2. Login with root / ${INITIAL_PASSWORD}
-  3. ${RED}Change root password immediately${NC}
-  4. Set up 2FA (recommended)
-  5. Create users and projects
-  6. Configure SSH keys
-  7. Set up regular backups
-
-${BLUE}⚠️  SSL Certificate Note:${NC}
-  Since we're using a self-signed certificate, your browser will show a security warning.
-  For internal use, you can safely ignore this or add the certificate to your trusted store.
-  
-  Certificate location: ${GREEN}/etc/gitlab/ssl/${GITLAB_HOSTNAME}.crt${NC}
-
-${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━���━━━━━━━━━━━━━━━━━━━━━${NC}
-
-${YELLOW}Enjoy your GitLab CE! 🚀${NC}
-
-${BLUE}Created by:${NC} Joe @ hiall-fyi
-${BLUE}GitHub:${NC} https://github.com/hiall-fyi/pve-secure-gitlab-lxc
-${BLUE}Support:${NC} https://buymeacoffee.com/hiallfyi ☕
-
-EOF
-fi
+print_final_summary
 
 # ---------- Save installation log ----------
-LOG_FILE="/var/log/gitlab-ce-install-${VMID}.log"
-cat > "$LOG_FILE" << EOFLOG
-GitLab CE Installation Log
-==========================
-Date: $(date)
-Container ID: ${VMID}
-Hostname: ${HOSTNAME}
-IP: ${CT_IP}
-GitLab URL: ${GITLAB_URL}
-GitLab Version: ${GITLAB_VERSION:-Latest Stable}
-Initial Root Password: ${INITIAL_PASSWORD}
-
-LVM Disks:
-- /dev/${STORAGE}/${LV_ETC} -> /etc/gitlab (${ETC_SIZE}G)
-- /dev/${STORAGE}/${LV_LOG} -> /var/log/gitlab (${LOG_SIZE}G)
-- /dev/${STORAGE}/${LV_OPT} -> /var/opt/gitlab (${OPT_SIZE}G)
-
-Security Features:
-- Unprivileged Container: Yes
-- SSL: Self-Signed Certificate
-- HTTPS Redirect: Enabled
-- Security Headers: Enabled
-- Rate Limiting: Enabled
-- Firewall: UFW Enabled
-
-EOFLOG
-
-log_info "Installation log saved to: ${LOG_FILE}"
+write_install_log
 
 exit 0
+

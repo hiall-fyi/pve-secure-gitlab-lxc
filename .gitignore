@@ -1,26 +1,2 @@
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Backup files
-*.bak
-*.backup
-*~
-
-# Log files
-*.log
-
-# Temporary files
-*.tmp
-*.temp
-
-# Editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Test files
-test-*.sh
+# Project-specific ignores are handled by ~/.gitignore_global
+# This file is intentionally minimal — add only repo-specific overrides here.
