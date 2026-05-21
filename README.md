@@ -6,7 +6,7 @@
 ![Proxmox](https://img.shields.io/badge/Proxmox-VE%208.x-E57000?style=for-the-badge&logo=proxmox&logoColor=white) ![GitLab CE](https://img.shields.io/badge/GitLab-CE-FC6D26?style=for-the-badge&logo=gitlab&logoColor=white) ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LXC-E95420?style=for-the-badge&logo=ubuntu&logoColor=white) ![Security](https://img.shields.io/badge/Security-Hardened-00C853?style=for-the-badge&logo=security&logoColor=white)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-1.3.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge) ![shellcheck](https://img.shields.io/badge/shellcheck-passing-brightgreen?style=for-the-badge&logo=gnu-bash&logoColor=white) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-2.0.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge) ![shellcheck](https://img.shields.io/badge/shellcheck-passing-brightgreen?style=for-the-badge&logo=gnu-bash&logoColor=white) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/pve-secure-gitlab-lxc?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/pve-secure-gitlab-lxc?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/pve-secure-gitlab-lxc?style=for-the-badge&logo=github) ![GitHub last commit](https://img.shields.io/github/last-commit/hiall-fyi/pve-secure-gitlab-lxc?style=for-the-badge&logo=github)
@@ -14,9 +14,7 @@
 <!-- Support -->
 [![Buy Me A Coffee](https://img.shields.io/badge/Support-Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/hiallfyi)
 
-**🚀 One command to go from bare Proxmox host to a fully hardened, production-ready GitLab CE — in about 15 minutes.**
-
-**No manual steps, no missed security settings, no guesswork. Just run the script and start pushing code.**
+**One command — from a bare Proxmox host to a hardened GitLab CE in about 15 minutes.**
 
 [Quick Start](#-quick-start) • [Features](#-features) • [Storage Guide](#-storage-configuration-guide) • [Troubleshooting](#-troubleshooting) • [Support](#-support)
 
@@ -26,21 +24,21 @@
 
 ## Why This Script?
 
-Setting up GitLab CE on Proxmox the manual way means creating an LXC container, configuring storage, installing packages, generating SSL certificates, hardening nginx, setting up a firewall, and hoping you didn't miss a step. It's easily a couple of hours of work, and one wrong setting can leave your instance exposed.
+The manual route is: create an unprivileged LXC, carve LVM volumes, install packages, generate SSL, harden nginx, configure UFW, then re-check every setting. Plenty of places to slip up.
 
-This script does all of that in a single command. You answer a few questions (or pass flags for automation), and 15 minutes later you have a running GitLab with security hardening that would take most admins a full afternoon to configure by hand.
+This script does the same thing in one command. Answer a handful of prompts (or pass flags for automation) and you'll have a running, hardened GitLab in about 15 minutes.
 
-- **One command** — from bare Proxmox host to running GitLab, fully configured
-- **Security by default** — unprivileged container, TLS 1.2/1.3, security headers, firewall, rate limiting — all automatic
-- **Flexible storage** — Simple Mode (one disk, recommended) or Advanced Mode (separate volumes for compliance)
-- **Smart defaults** — auto-detects VMID, gateway, DNS; just press Enter for standard setups
-- **SSL options** — self-signed (works instantly for internal use) or Let's Encrypt (for public domains)
+- **One command** — bare Proxmox host to running GitLab
+- **Hardened by default** — unprivileged container, TLS 1.2/1.3, security headers, UFW, rate limiting — all configured automatically
+- **Two storage layouts** — Simple Mode (one disk, recommended) or Advanced Mode (separate volumes if you need granular snapshots or compliance separation)
+- **Sensible defaults** — auto-detects VMID, gateway, and DNS, so most prompts you can just Enter through
+- **Pick your SSL** — self-signed (works on internal networks straight away) or Let's Encrypt (public domains)
 
 ---
 
 ## Quick Start
 
-**Prerequisites:** Proxmox VE 7.0+, 150GB+ available LVM space, root access. Ubuntu 24.04 LXC template auto-downloads if missing.
+**Prerequisites:** Proxmox VE 8.x, 150GB+ available LVM space, root access. Ubuntu 24.04 LXC template auto-downloads if missing.
 
 ### 1. Download
 
@@ -90,29 +88,27 @@ chmod +x pve-secure-gitlab-lxc.sh
 
 ### What You Get
 
-- **Fully updated system** — both your Proxmox host and the new container get the latest security patches before GitLab is installed
-- **Isolated container** — GitLab runs in an unprivileged LXC container, so a compromise inside GitLab can't easily reach your host
-- **SSL out of the box** — choose self-signed (works instantly for internal use) or Let's Encrypt (for public-facing setups)
-- **Pick your GitLab version** — install the latest stable release, or pin a specific version for reproducibility
-- **Multiple network bridges** — works with vmbr0, vmbr1, vmbr3, or whatever your network setup looks like
-- **Safe re-runs** — if a previous install failed, the script detects leftover resources and offers to clean them up
-- **Smart defaults** — auto-detects your next available VMID, gateway, and DNS, so you can just press Enter through most prompts
+- **System updates first** — Proxmox host and the new container both get the latest patches before GitLab is installed
+- **Isolated container** — GitLab runs in an unprivileged LXC, so a compromise inside it can't easily reach the host
+- **Self-signed or Let's Encrypt SSL** — pick whichever fits your network
+- **Version control** — install the latest stable release, or pin a specific version (e.g. `--version 16.8.1`)
+- **Bridge of your choice** — `vmbr0`, `vmbr1`, `vmbr3`, whichever you've configured
+- **Safe re-runs** — if a previous install failed, the script detects leftover containers / LVs and offers to clean them up
+- **Sensible defaults** — auto-detects next available VMID, gateway, and DNS
 
 ### Security (configured automatically)
 
-Your GitLab instance is hardened from the start — no manual configuration needed:
-
-- **Unprivileged container** — GitLab can't access your host even if compromised
-- **TLS 1.2/1.3 only** — older, insecure protocols are disabled
-- **HTTPS enforced** — HTTP requests are automatically redirected to HTTPS
-- **Security headers** — HSTS, clickjacking protection, content-type sniffing prevention, and XSS filtering are all enabled
-- **Rate limiting** — brute-force login attempts are throttled automatically
-- **Firewall** — only SSH (22), HTTP (80), and HTTPS (443) are open; everything else is blocked
+- **Unprivileged container** — UID-mapped, kernel-isolated
+- **TLS 1.2 / 1.3 only** — older protocols disabled
+- **HTTPS enforced** — HTTP requests redirect to HTTPS
+- **Security headers** — HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy
+- **Rate limiting** — brute-force login attempts are throttled
+- **UFW firewall** — only 22 / 80 / 443 are open; everything else is closed
 
 ### Storage
 
-- **Simple Mode** (default) — one disk, all GitLab data in one place. Easy to manage, easy to expand. Recommended for most users.
-- **Advanced Mode** — separate volumes for config, logs, and data. Useful if you need independent snapshots or have compliance requirements.
+- **Simple Mode** (default) — single root filesystem. One disk to monitor, one volume to expand. Recommended for most setups.
+- **Advanced Mode** — separate LVM volumes for `/etc/gitlab`, `/var/log/gitlab`, `/var/opt/gitlab`. Useful if you need per-volume snapshots or compliance separation.
 
 ---
 
@@ -243,10 +239,13 @@ Best for internal networks, development, testing. Works immediately, no domain r
 
 ### Let's Encrypt
 
-Best for public-facing instances. Requires valid public domain, ports 80/443 accessible from internet.
+For public-facing instances. Needs a valid public domain and ports 80 / 443 reachable from the internet. The contact email is used for certificate-expiry warnings.
 
 ```bash
-./pve-secure-gitlab-lxc.sh ... --url https://gitlab.example.com --ssl-type letsencrypt
+./pve-secure-gitlab-lxc.sh ... \
+  --url https://gitlab.example.com \
+  --ssl-type letsencrypt \
+  --le-email you@example.com
 ```
 
 <details>
@@ -317,7 +316,7 @@ pct exec <VMID> -- gitlab-ctl renew-le-certs
   --storage-mode simple --rootfs-size 100 \
   --ip 203.0.113.150/24 --gateway 203.0.113.1 --dns 8.8.8.8 \
   --url https://gitlab.example.com --storage local-lvm \
-  --ssl-type letsencrypt
+  --ssl-type letsencrypt --le-email you@example.com
 ```
 
 </details>
@@ -344,7 +343,7 @@ pct exec <VMID> -- gitlab-ctl renew-le-certs
 
 1. Open your GitLab URL in a browser
 2. Login with username **root** and the password shown at the end of the installation
-3. **Change the root password immediately** — the initial password is also saved to a log file on the host, so treat it as temporary
+3. **Change the root password immediately** — the initial password is also written to `/var/log/gitlab-ce-install-<VMID>.log` (mode 0600, root-only), but treat it as temporary regardless
 
 ### What to Do Next
 
@@ -537,9 +536,9 @@ For other issues, check the installation log at `/var/log/gitlab-ce-install-<VMI
 
 ## Keeping Your GitLab Secure
 
-The script sets up a solid security baseline, but there are a few things only you can do:
+The script handles the install-time hardening, but a few things you'll need to do yourself:
 
-- **Change the root password right after install** — the initial password is shown in the terminal and saved to a log file on the host
+- **Change the root password right after install** — the initial password is shown in the terminal and saved (root-only) to `/var/log/gitlab-ce-install-<VMID>.log`
 - **Turn on 2FA for all users** — especially admin accounts
 - **Use SSH keys** — disable password-based Git access when possible
 - **Keep things updated** — run `apt upgrade gitlab-ce` inside the container quarterly, and update host packages monthly

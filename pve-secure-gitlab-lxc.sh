@@ -3,7 +3,7 @@
 # GitLab CE Secure Installation Script for Proxmox LXC
 # Military-Grade Security Standards - Internal Deployment
 #
-# Version: 1.3.0
+# Version: 2.0.0
 # Author: Joe @ hiall-fyi
 # GitHub: https://github.com/hiall-fyi
 # Support: https://buymeacoffee.com/hiallfyi
@@ -26,11 +26,11 @@
 set -euo pipefail
 
 # ---------- Colors & Logging ----------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'
+NC=$'\033[0m' # No Color
 
 log_info() {
     echo -e "${GREEN}[INFO]${NC} $*"
@@ -59,7 +59,7 @@ print_config_summary() {
     cat << EOF
 ${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
   Container ID    : ${GREEN}${VMID}${NC}
-  Hostname        : ${GREEN}${HOSTNAME}${NC}
+  Hostname        : ${GREEN}${CT_HOSTNAME}${NC}
   CPU Cores       : ${GREEN}${CPU}${NC}
   RAM             : ${GREEN}${RAM} MB${NC}
 EOF
@@ -100,7 +100,7 @@ ${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━
 
 ${BLUE}📦 Container Information:${NC}
   • Container ID      : ${GREEN}${VMID}${NC}
-  • Hostname          : ${GREEN}${HOSTNAME}${NC}
+  • Hostname          : ${GREEN}${CT_HOSTNAME}${NC}
   • IP Address        : ${GREEN}${CT_IP}${NC}
   • GitLab URL        : ${GREEN}${GITLAB_URL}${NC}
 
@@ -163,7 +163,7 @@ ${BLUE}📝 Common Commands:${NC}
   # View logs
   ${GREEN}pct exec ${VMID} -- gitlab-ctl tail${NC}
 
-  # Enter container
+  # Enter container (drops you into a root shell)
   ${GREEN}pct enter ${VMID}${NC}
 
 ${BLUE}🔧 Next Steps:${NC}
@@ -211,12 +211,16 @@ EOF
 write_install_log() {
     local log_file="/var/log/gitlab-ce-install-${VMID}.log"
 
+    # Restrict to root before writing — file contains the initial GitLab root password
+    (umask 077 && : > "$log_file")
+    chmod 600 "$log_file"
+
     cat > "$log_file" << EOFLOG
 GitLab CE Installation Log
 ==========================
 Date: $(date)
 Container ID: ${VMID}
-Hostname: ${HOSTNAME}
+Hostname: ${CT_HOSTNAME}
 IP: ${CT_IP}
 GitLab URL: ${GITLAB_URL}
 GitLab Version: ${GITLAB_VERSION:-Latest Stable}
@@ -279,9 +283,9 @@ log_info "✓ Proxmox VE environment confirmed"
 
 # ---------- Parse Command Line Arguments ----------
 INTERACTIVE=true
-SCRIPT_VERSION="1.3.0"
+SCRIPT_VERSION="2.0.0"
 VMID=""
-HOSTNAME=""
+CT_HOSTNAME=""
 CPU=""
 RAM=""
 BOOTDISK=""
@@ -297,6 +301,7 @@ STORAGE=""
 BRIDGE="vmbr0"
 FORCE_CLEANUP=false
 SSL_TYPE="self-signed"  # Default to self-signed for internal use
+LE_EMAIL=""             # Required when SSL_TYPE=letsencrypt
 STORAGE_MODE="simple"   # NEW: simple (single root) or advanced (separate LVs)
 
 show_usage() {
@@ -348,6 +353,7 @@ Optional:
     --version <version>   GitLab version (leave empty for latest, e.g., 16.8.1)
     --bridge <bridge>     Network bridge (default: vmbr0, e.g., vmbr3)
     --ssl-type <type>     SSL certificate type: self-signed or letsencrypt (default: self-signed)
+    --le-email <email>    Contact email for Let's Encrypt registration (required when --ssl-type letsencrypt)
     --force-cleanup       Automatically cleanup existing container/LVs (non-interactive)
     --help                Show this help message
 
@@ -377,7 +383,8 @@ Examples:
     $0 --vmid 130 --hostname gitlab --cpu 4 --ram 8192 \\
        --storage-mode simple --rootfs-size 50 \\
        --ip 10.29.83.130/24 --gateway 10.29.83.253 --dns 8.8.8.8 \\
-       --url https://gitlab.example.com --storage pve --ssl-type letsencrypt
+       --url https://gitlab.example.com --storage pve \\
+       --ssl-type letsencrypt --le-email admin@example.com
 
 EOF
     exit 0
@@ -392,7 +399,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --hostname)
-            HOSTNAME="$2"
+            CT_HOSTNAME="$2"
             shift 2
             ;;
         --cpu)
@@ -460,6 +467,10 @@ while [[ $# -gt 0 ]]; do
             SSL_TYPE="$2"
             shift 2
             ;;
+        --le-email)
+            LE_EMAIL="$2"
+            shift 2
+            ;;
         --force-cleanup)
             FORCE_CLEANUP=true
             shift
@@ -483,8 +494,8 @@ if [ -n "$OPT_SIZE" ] || [ -n "$LOG_SIZE" ] || [ -n "$ETC_SIZE" ]; then
     log_info "Detected v1.0.0 parameters, using Advanced Mode for backward compatibility"
 fi
 
-# ---------- Step 1: Update Proxmox Host System ----------
-log_step "Step 1: Updating Proxmox host system"
+# ---------- Update Proxmox Host System ----------
+log_step "Updating Proxmox host system"
 
 log_info "Updating package lists..."
 apt update || err "apt update failed"
@@ -508,12 +519,25 @@ TEMPLATE=$(pvesm list local | grep 'vztmpl/ubuntu-24.04' | awk '{print $1}' | he
 
 if [ -z "$TEMPLATE" ]; then
     log_warn "Ubuntu 24.04 template not found, attempting download..."
-    
-    # Download Ubuntu 24.04 template
+
     pveam update
-    pveam download local ubuntu-24.04-standard_24.04-2_amd64.tar.zst || \
+
+    # Pick the latest available ubuntu-24.04-standard_*.tar.zst — Canonical/Proxmox publish
+    # patch revisions (-1, -2, -3, ...) over time, so hardcoding a specific patch goes stale.
+    TEMPLATE_NAME=$(pveam available --section system 2>/dev/null \
+        | awk '{print $2}' \
+        | grep '^ubuntu-24\.04-standard_.*\.tar\.zst$' \
+        | sort -V \
+        | tail -n1)
+
+    if [ -z "$TEMPLATE_NAME" ]; then
+        err "Could not find an Ubuntu 24.04 template via 'pveam available'. Check your Proxmox repo configuration."
+    fi
+
+    log_info "Downloading template: ${TEMPLATE_NAME}"
+    pveam download local "$TEMPLATE_NAME" || \
         err "Failed to download Ubuntu 24.04 template. Please download manually to /var/lib/vz/template/cache/"
-    
+
     TEMPLATE=$(pvesm list local | grep 'vztmpl/ubuntu-24.04' | awk '{print $1}' | head -n1 || true)
     
     if [ -z "$TEMPLATE" ]; then
@@ -573,8 +597,8 @@ if [ "$INTERACTIVE" = true ]; then
     read -rp "Container ID (default: ${DEFAULT_VMID}): " VMID
     VMID="${VMID:-$DEFAULT_VMID}"
     
-    read -rp "Container Name (default: gitlab): " HOSTNAME
-    HOSTNAME="${HOSTNAME:-gitlab}"
+    read -rp "Container Name (default: gitlab): " CT_HOSTNAME
+    CT_HOSTNAME="${CT_HOSTNAME:-gitlab}"
     
     read -rp "CPU Cores (default: 4): " CPU
     CPU="${CPU:-4}"
@@ -639,14 +663,14 @@ if [ "$INTERACTIVE" = true ]; then
 else
     # Validate required parameters in non-interactive mode
     if [ "$STORAGE_MODE" = "simple" ]; then
-        if [ -z "$VMID" ] || [ -z "$HOSTNAME" ] || [ -z "$CPU" ] || [ -z "$RAM" ] || \
+        if [ -z "$VMID" ] || [ -z "$CT_HOSTNAME" ] || [ -z "$CPU" ] || [ -z "$RAM" ] || \
            [ -z "$BOOTDISK" ] || [ -z "$CT_IP" ] || [ -z "$GATEWAY" ] || [ -z "$DNS" ] || \
            [ -z "$GITLAB_URL" ] || [ -z "$STORAGE" ]; then
             log_error "Simple Mode requires: --vmid, --hostname, --cpu, --ram, --rootfs-size, --ip, --gateway, --dns, --url, --storage"
             exit 1
         fi
     else
-        if [ -z "$VMID" ] || [ -z "$HOSTNAME" ] || [ -z "$CPU" ] || [ -z "$RAM" ] || \
+        if [ -z "$VMID" ] || [ -z "$CT_HOSTNAME" ] || [ -z "$CPU" ] || [ -z "$RAM" ] || \
            [ -z "$BOOTDISK" ] || [ -z "$OPT_SIZE" ] || [ -z "$LOG_SIZE" ] || [ -z "$ETC_SIZE" ] || \
            [ -z "$CT_IP" ] || [ -z "$GATEWAY" ] || [ -z "$DNS" ] || \
            [ -z "$GITLAB_URL" ] || [ -z "$STORAGE" ]; then
@@ -764,6 +788,21 @@ elif [[ "$GITLAB_URL" =~ ^http:// ]] && [ "$SSL_TYPE" != "self-signed" ]; then
     SSL_TYPE="self-signed"
 fi
 
+# Let's Encrypt requires a real contact email for renewal warnings
+if [ "$SSL_TYPE" = "letsencrypt" ]; then
+    if [ -z "$LE_EMAIL" ] && [ "$INTERACTIVE" = true ]; then
+        echo ""
+        read -rp "Let's Encrypt contact email (for cert renewal warnings): " LE_EMAIL
+    fi
+    if [ -z "$LE_EMAIL" ]; then
+        err "Let's Encrypt requires --le-email <address>. This is the contact for cert expiry warnings."
+    fi
+    if ! [[ "$LE_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+        err "Invalid email format for --le-email: ${LE_EMAIL}"
+    fi
+    log_info "✓ Let's Encrypt contact email: ${LE_EMAIL}"
+fi
+
 # ---------- Summary & Confirmation ----------
 log_step "Installation Configuration Summary"
 
@@ -781,8 +820,8 @@ else
     log_info "Non-Interactive mode, auto-confirming configuration"
 fi
 
-# ---------- Step 2: Create Unprivileged Container ----------
-log_step "Step 2: Creating Unprivileged LXC Container"
+# ---------- Create Unprivileged Container ----------
+log_step "Creating Unprivileged LXC Container"
 
 log_info "Creating Container $VMID..."
 
@@ -794,8 +833,8 @@ GITHUB_LINK="https://github.com/hiall-fyi"
 
 # Create beautiful Markdown-formatted Notes for Proxmox UI
 if [ "$STORAGE_MODE" = "simple" ]; then
-    STORAGE_SECTION="**Mode:** Simple (Single Root Filesystem) ⭐  
-**Root Size:** ${BOOTDISK}G  
+    STORAGE_SECTION="**Mode:** Simple (Single Root Filesystem) ⭐
+**Root Size:** ${BOOTDISK}G
 **All GitLab data on root filesystem**"
 else
     STORAGE_SECTION="**Mode:** Advanced (Separate LVM Volumes)
@@ -805,23 +844,29 @@ else
 - **Data:** \`/var/opt/gitlab\` → \`/dev/${STORAGE}/vm-${VMID}-gitlab-opt\` (${OPT_SIZE}G)"
 fi
 
+if [ "$SSL_TYPE" = "self-signed" ]; then
+    SSL_FINGERPRINT_LINE="✅ **Self-Signed SSL** - 10-year validity"
+else
+    SSL_FINGERPRINT_LINE="✅ **Let's Encrypt SSL** - auto-renewal enabled"
+fi
+
 FINGERPRINT="# 🚀 GitLab CE Secure Install
 
-**Version:** ${SCRIPT_VERSION}  
-**Installed:** ${INSTALL_DATE}  
+**Version:** ${SCRIPT_VERSION}
+**Installed:** ${INSTALL_DATE}
 **Created by:** ${SCRIPT_AUTHOR}
 
 ---
 
 ## 🔒 Security Features
 
-✅ **Unprivileged Container** - Enhanced isolation  
-✅ **System Fully Updated** - Latest security patches  
-✅ **Self-Signed SSL** - 10-year validity  
-✅ **HTTPS Redirect** - Forced secure connections  
-✅ **Security Headers** - HSTS, X-Frame-Options, CSP  
-✅ **Rate Limiting** - DDoS protection  
-✅ **UFW Firewall** - Network security  
+✅ **Unprivileged Container** - Enhanced isolation
+✅ **System Fully Updated** - Latest security patches
+${SSL_FINGERPRINT_LINE}
+✅ **HTTPS Redirect** - Forced secure connections
+✅ **Security Headers** - HSTS, X-Frame-Options, CSP
+✅ **Rate Limiting** - DDoS protection
+✅ **UFW Firewall** - Network security
 
 ---
 
@@ -843,10 +888,10 @@ ${STORAGE_SECTION}
 <a href=\"${COFFEE_LINK}\"><img src=\"https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png\" alt=\"Buy Me A Coffee\" height=\"60\" width=\"217\"></a>"
 
 pct create "$VMID" "$TEMPLATE" \
-  --hostname "$HOSTNAME" \
+  --hostname "$CT_HOSTNAME" \
   --cores "$CPU" \
   --memory "$RAM" \
-  --rootfs "local-lvm:${BOOTDISK}" \
+  --rootfs "${STORAGE}:${BOOTDISK}" \
   --net0 "name=eth0,bridge=${BRIDGE},ip=${CT_IP},gw=${GATEWAY},type=veth" \
   --nameserver "$DNS" \
   --unprivileged 1 \
@@ -875,11 +920,14 @@ if [ "$STORAGE_MODE" = "advanced" ]; then
             lvcreate -L "${size_g}G" -n "$lv_name" "$STORAGE" || err "lvcreate failed: $lv_path"
         fi
 
-        # Format if needed
-        if blkid -o value -s TYPE "$lv_path" >/dev/null 2>&1; then
-            local fs_type
-            fs_type=$(blkid -o value -s TYPE "$lv_path")
-            log_info "LV $lv_path already formatted as: $fs_type"
+        # Format if needed; refuse non-ext4 to avoid silently mixing filesystems
+        local fs_type
+        fs_type=$(blkid -o value -s TYPE "$lv_path" 2>/dev/null || true)
+        if [ -n "$fs_type" ]; then
+            if [ "$fs_type" != "ext4" ]; then
+                err "LV $lv_path is formatted as '$fs_type' — expected ext4. Cleanup the LV manually or pick a different VMID."
+            fi
+            log_info "LV $lv_path already formatted as ext4"
         else
             log_info "Formatting $lv_path as ext4..."
             wipefs -a "$lv_path" 2>/dev/null || true
@@ -992,8 +1040,8 @@ else
     log_info "✓ GitLab directories created on root filesystem"
 fi
 
-# ---------- Step 1 (Container): Update System ----------
-log_step "Step 1 (Container): Updating container system"
+# ---------- Update Container System ----------
+log_step "Updating container system"
 
 log_info "Updating package lists..."
 pct exec "$VMID" -- bash -c "apt update" || err "Container apt update failed"
@@ -1038,20 +1086,21 @@ pct exec "$VMID" -- bash -c "curl -sS https://packages.gitlab.com/install/reposi
 # Pre-configure GitLab SSL settings based on SSL_TYPE
 log_info "Pre-configuring GitLab SSL settings (${SSL_TYPE})..."
 
+# Pre-install scaffold: the postinst hook of gitlab-ce runs gitlab-ctl reconfigure,
+# which needs to know whether Let's Encrypt is enabled before any cert is generated.
+# This file is rewritten in full after the install finishes (see "Apply final GitLab
+# configuration" below) so the user never has to reconcile two stanzas.
 if [ "$SSL_TYPE" = "letsencrypt" ]; then
-    # Enable Let's Encrypt for public domains
     pct exec "$VMID" -- bash -c "mkdir -p /etc/gitlab && cat > /etc/gitlab/gitlab.rb << 'EOFPRECONFIG'
-# Enable Let's Encrypt for public domain
+# Pre-install scaffold — overwritten after gitlab-ce installs.
 letsencrypt['enable'] = true
-letsencrypt['contact_emails'] = ['admin@example.com']  # Change this!
 letsencrypt['auto_renew'] = true
 EOFPRECONFIG
 " || log_warn "Could not create pre-configuration"
     log_info "✓ Let's Encrypt will be configured during installation"
 else
-    # Disable Let's Encrypt (we'll use self-signed certificate)
     pct exec "$VMID" -- bash -c "mkdir -p /etc/gitlab && cat > /etc/gitlab/gitlab.rb << 'EOFPRECONFIG'
-# Disable Let's Encrypt (we'll use self-signed certificate)
+# Pre-install scaffold — overwritten after gitlab-ce installs.
 letsencrypt['enable'] = false
 EOFPRECONFIG
 " || log_warn "Could not create pre-configuration"
@@ -1071,12 +1120,12 @@ pct exec "$VMID" -- bash -c "$INSTALL_CMD" || err "GitLab CE installation failed
 
 log_info "✓ GitLab CE installed"
 
-# ---------- Step 3: SSL Configuration ----------
+# ---------- SSL Configuration ----------
 # Extract hostname from URL (used by SSL config and security hardening)
 GITLAB_HOSTNAME=$(echo "$GITLAB_URL" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
 
 if [ "$SSL_TYPE" = "self-signed" ]; then
-    log_step "Step 3: Configuring self-signed SSL certificate (internal use)"
+    log_step "Configuring self-signed SSL certificate (internal use)"
 
     log_info "Generating self-signed certificate for ${GITLAB_HOSTNAME}..."
 
@@ -1097,21 +1146,20 @@ if [ "$SSL_TYPE" = "self-signed" ]; then
 
     log_info "✓ Self-signed SSL certificate generated"
 else
-    log_step "Step 3: Let's Encrypt SSL certificate"
+    log_step "Let's Encrypt SSL certificate"
     log_info "Let's Encrypt is enabled - certificate will be obtained automatically"
     log_warn "⚠️  Make sure your domain points to this server's public IP!"
     log_warn "⚠️  Ports 80 and 443 must be accessible from the internet!"
 fi
 
-# ---------- Step 6: Security Hardening ----------
-log_step "Step 6: Applying security hardening configuration"
+# ---------- Security Hardening ----------
+log_step "Applying security hardening configuration"
 
 log_info "Configuring GitLab security settings..."
 
 if [ "$SSL_TYPE" = "self-signed" ]; then
-    # Self-signed certificate configuration
-    SSL_CONFIG="
-# SSL Configuration (Self-Signed for Internal Use)
+    SSL_BLOCK="# SSL Configuration (Self-Signed for Internal Use)
+letsencrypt['enable'] = false
 nginx['redirect_http_to_https'] = true
 nginx['ssl_certificate'] = '/etc/gitlab/ssl/${GITLAB_HOSTNAME}.crt'
 nginx['ssl_certificate_key'] = '/etc/gitlab/ssl/${GITLAB_HOSTNAME}.key'
@@ -1119,32 +1167,32 @@ nginx['ssl_protocols'] = 'TLSv1.2 TLSv1.3'
 nginx['ssl_ciphers'] = 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384'
 nginx['ssl_prefer_server_ciphers'] = 'on'
 nginx['ssl_session_cache'] = 'shared:SSL:10m'
-nginx['ssl_session_timeout'] = '10m'
-"
+nginx['ssl_session_timeout'] = '10m'"
 else
-    # Let's Encrypt configuration
-    SSL_CONFIG="
-# SSL Configuration (Let's Encrypt)
+    SSL_BLOCK="# SSL Configuration (Let's Encrypt — certs managed automatically)
+letsencrypt['enable'] = true
+letsencrypt['auto_renew'] = true
+letsencrypt['contact_emails'] = ['${LE_EMAIL}']
 nginx['redirect_http_to_https'] = true
 nginx['ssl_protocols'] = 'TLSv1.2 TLSv1.3'
 nginx['ssl_ciphers'] = 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384'
 nginx['ssl_prefer_server_ciphers'] = 'on'
 nginx['ssl_session_cache'] = 'shared:SSL:10m'
-nginx['ssl_session_timeout'] = '10m'
-# Let's Encrypt certificates are managed automatically
-"
+nginx['ssl_session_timeout'] = '10m'"
 fi
 
-pct exec "$VMID" -- bash -c "cat >> /etc/gitlab/gitlab.rb << 'EOFGITLAB'
-
+# Single canonical write — overwrites the pre-install scaffold so /etc/gitlab/gitlab.rb
+# has one stanza per directive. Easier to audit and easier to re-run.
+pct exec "$VMID" -- bash -c "cat > /etc/gitlab/gitlab.rb << 'EOFGITLAB'
 # ========================================
-# Security Hardening Configuration
+# GitLab CE — Secure Install Configuration
+# Generated by pve-secure-gitlab-lxc v${SCRIPT_VERSION}
 # ========================================
 
 # External URL
 external_url '${GITLAB_URL}'
 
-${SSL_CONFIG}
+${SSL_BLOCK}
 
 # Security Headers
 nginx['custom_gitlab_server_config'] = \"
@@ -1185,7 +1233,6 @@ sidekiq['max_concurrency'] = 10
 # Disable unnecessary services for internal use
 gitlab_kas['enable'] = false
 sentinel['enable'] = false
-
 EOFGITLAB
 " || err "Failed to write GitLab configuration"
 
@@ -1223,7 +1270,8 @@ log_info "✓ Firewall configured"
 # ---------- Get Initial Root Password ----------
 log_step "Retrieving initial root password..."
 
-INITIAL_PASSWORD=$(pct exec "$VMID" -- bash -c "cat /etc/gitlab/initial_root_password 2>/dev/null | grep 'Password:' | awk '{print \$2}'" || echo "N/A")
+INITIAL_PASSWORD=$(pct exec "$VMID" -- bash -c "cat /etc/gitlab/initial_root_password 2>/dev/null | grep 'Password:' | awk '{print \$2}'" 2>/dev/null || true)
+INITIAL_PASSWORD="${INITIAL_PASSWORD:-N/A — run \`gitlab-rake gitlab:password:reset\` inside the container}"
 
 # ---------- Final Summary ----------
 log_step "Installation Complete!"

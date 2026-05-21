@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-05-21
+
+**Audit pass — security, correctness, and consistency fixes**
+
+### ⚠️ Breaking Changes
+- **`--le-email <address>` is now required when `--ssl-type letsencrypt`** — Previous versions silently registered Let's Encrypt against a hardcoded `admin@example.com`. The script now refuses to start without a real contact address. **Migration:** add `--le-email you@example.com` to any non-interactive automation that passes `--ssl-type letsencrypt`. Self-signed installs are unaffected.
+- **`--storage <vg>` now governs the rootfs as well as the mount-point volumes** — Earlier versions silently routed the rootfs to `local-lvm` regardless of what you passed. If you've been relying on that quirk (e.g. you passed `--storage pve` but expected the rootfs on `local-lvm`), you'll need to either name `local-lvm` explicitly or accept that the rootfs lands on the VG you named. For most users this is a fix, not a break — but it changes observed behaviour, so it's flagged.
+
+### Fixed
+- **Coloured output renders properly in the interactive menu, summary screens, and Proxmox container Notes** — The escape codes were quoted in a way that only worked inside `echo -e`. Heredocs and plain `echo` were leaking literal `\033[…m` in front of every line. All three render in colour now.
+- **Initial root password log file is no longer world-readable** — `/var/log/gitlab-ce-install-<VMID>.log` contains the initial GitLab root password and was created with default permissions (0644). Now created with mode 0600.
+- **`/etc/gitlab/gitlab.rb` is now written in a single canonical block** — Two heredocs used to write the file in two stages, leaving overlapping stanzas to reconcile if you ever opened the file. One write now produces the final config end-to-end.
+- **Proxmox container Notes show the correct SSL type** — The Markdown Notes attached to the LXC always claimed "Self-Signed SSL — 10-year validity", even when you picked Let's Encrypt. Now branches on `--ssl-type` like the on-screen summary already did.
+- **Empty initial-password fallback works** — When the password extraction returned nothing, the `N/A` fallback never fired (the pipeline still exited 0). The summary used to show a blank password; it now falls back with a hint to run `gitlab-rake gitlab:password:reset` instead.
+
+### Improved
+- **Step numbering removed from progress headings** — The headings used to read `Step 1 → Step 2 → Step 1 (Container) → Step 3 → Step 6`, which looked like a crashed-and-restarted script. Sections now describe what's happening without the number.
+- **Ubuntu 24.04 template auto-download picks the latest available patch revision** — Previously hardcoded to `ubuntu-24.04-standard_24.04-2_amd64.tar.zst` and would fail once Canonical / Proxmox shipped `-3`. Now resolves the latest via `pveam available`.
+- **Stricter LV format check in Advanced Mode** — `mk_lv_if_missing` used to accept any existing filesystem on a recycled LV. Now refuses anything other than ext4 with an actionable error.
+- **`pct enter` line in the post-install summary mentions it drops you into a root shell** — Small clarification for first-time users.
+- **Internal `HOSTNAME` variable renamed to `CT_HOSTNAME`** — Avoids shadowing bash's built-in `$HOSTNAME`. No user-visible change.
+- **Proxmox VE prerequisite documented consistently as 8.x** — README and CHANGELOG now agree on the supported version, matching the Ubuntu 24.04 template the script relies on.
+
 ## [1.3.0] - 2026-04-03
 
 **Code Health & Reliability**
@@ -24,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Improved
 - **Completely rewritten README** — Cleaner layout with collapsible sections, so you can find what you need without scrolling through walls of text.
 - **Script now passes shellcheck with zero warnings** — Fixes to quoting and variable handling make the script more robust on edge-case inputs.
-- **Better onboarding** — New "Why This Script?" section and dynamic GitHub badges help you evaluate the project at a glance.
+- **New "Why This Script?" section in the README** — Plus dynamic GitHub badges (stars, forks, issues, last commit) at the top.
 
 ## [1.1.1] - 2026-01-11
 
