@@ -1,0 +1,25 @@
+name: Lint
+
+# Runs the same checks used locally before every change: shellcheck (static
+# analysis) and `bash -n` (syntax). Keeps the installer clean on every push and PR.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    name: shellcheck + syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: '.'
+          format: gcc
+
+      - name: Check bash syntax
+        run: bash -n pve-secure-gitlab-lxc.sh

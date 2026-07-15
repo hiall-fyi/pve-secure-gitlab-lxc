@@ -3,7 +3,7 @@
 # GitLab CE Secure Installation Script for Proxmox LXC
 # Military-Grade Security Standards - Internal Deployment
 #
-# Version: 2.0.0
+# Version: 2.1.0
 # Author: Joe @ hiall-fyi
 # GitHub: https://github.com/hiall-fyi
 # Support: https://buymeacoffee.com/hiallfyi
@@ -84,7 +84,12 @@ EOF
   GitLab URL      : ${GREEN}${GITLAB_URL}${NC}
   GitLab Version  : ${GREEN}${GITLAB_VERSION:-Latest Stable}${NC}
   SSL Type        : ${GREEN}${SSL_TYPE}${NC}
-  Storage VG      : ${GREEN}${STORAGE}${NC}
+  Rootfs Storage  : ${GREEN}${PVE_STORAGE}${NC}
+EOF
+    if [ "$STORAGE_MODE" = "advanced" ]; then
+        echo "  LVM Volume Group: ${GREEN}${STORAGE}${NC}"
+    fi
+    cat << EOF
   Network Bridge  : ${GREEN}${BRIDGE}${NC}
   Template        : ${GREEN}${TEMPLATE}${NC}
 ${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
@@ -111,6 +116,7 @@ EOF
         cat << EOF
 ${BLUE}💾 Storage Configuration:${NC}
   • Mode              : ${GREEN}Simple (Single Root Filesystem)${NC} ⭐
+  • Rootfs Storage    : ${GREEN}${PVE_STORAGE}${NC}
   • Root Size         : ${GREEN}${BOOTDISK} GB${NC}
   • All GitLab data on root filesystem
 
@@ -119,6 +125,7 @@ EOF
         cat << EOF
 ${BLUE}💾 Storage Configuration:${NC}
   • Mode              : ${YELLOW}Advanced (Separate LVM Volumes)${NC}
+  • Rootfs Storage    : ${GREEN}${PVE_STORAGE}${NC}
   • /etc/gitlab       : ${GREEN}/dev/${STORAGE}/${LV_ETC}${NC} (${ETC_SIZE}G)
   • /var/log/gitlab   : ${GREEN}/dev/${STORAGE}/${LV_LOG}${NC} (${LOG_SIZE}G)
   • /var/opt/gitlab   : ${GREEN}/dev/${STORAGE}/${LV_OPT}${NC} (${OPT_SIZE}G)
@@ -232,12 +239,14 @@ EOFLOG
     if [ "$STORAGE_MODE" = "simple" ]; then
         cat >> "$log_file" << EOFLOG
 Storage: Simple Mode (Single Root Filesystem)
+- Rootfs Storage: ${PVE_STORAGE}
 - Root Size: ${BOOTDISK}G
 
 EOFLOG
     else
         cat >> "$log_file" << EOFLOG
 Storage: Advanced Mode (Separate LVM Volumes)
+- Rootfs Storage: ${PVE_STORAGE}
 - /dev/${STORAGE}/${LV_ETC} -> /etc/gitlab (${ETC_SIZE}G)
 - /dev/${STORAGE}/${LV_LOG} -> /var/log/gitlab (${LOG_SIZE}G)
 - /dev/${STORAGE}/${LV_OPT} -> /var/opt/gitlab (${OPT_SIZE}G)
@@ -265,25 +274,12 @@ EOFLOG
     log_info "Installation log saved to: ${log_file}"
 }
 
-# ---------- Pre-flight Checks ----------
-log_step "Running pre-flight checks..."
-
-# Check if running as root
-if [[ $EUID -ne 0 ]]; then
-   err "This script must be run as root. Please use sudo or run as root user."
-fi
-
-# Check if running on Proxmox
-if ! command -v pct &> /dev/null; then
-    err "This script can only run on Proxmox VE."
-fi
-
-log_info "✓ Root privileges confirmed"
-log_info "✓ Proxmox VE environment confirmed"
-
 # ---------- Parse Command Line Arguments ----------
+# Argument parsing (including --help) runs before the root / Proxmox pre-flight checks
+# below, so `--help` works for any user on any machine without needing root or a Proxmox
+# host. The pre-flight gate still guards every real operation.
 INTERACTIVE=true
-SCRIPT_VERSION="2.0.0"
+SCRIPT_VERSION="2.1.0"
 VMID=""
 CT_HOSTNAME=""
 CPU=""
@@ -297,14 +293,18 @@ GATEWAY=""
 DNS=""
 GITLAB_URL=""
 GITLAB_VERSION=""
-STORAGE=""
+STORAGE=""              # LVM volume-group name (vgs) — used for Advanced Mode's separate LVs
+PVE_STORAGE="local-lvm" # Proxmox storage ID (pvesm) — used for the container rootfs; distinct from the VG name
 BRIDGE="vmbr0"
 FORCE_CLEANUP=false
 SSL_TYPE="self-signed"  # Default to self-signed for internal use
 LE_EMAIL=""             # Required when SSL_TYPE=letsencrypt
 STORAGE_MODE="simple"   # NEW: simple (single root) or advanced (separate LVs)
 
+# Prints usage and exits. Optional $1 = exit code (default 0). An explicit --help exits 0;
+# an unknown/invalid option passes 1 so automation can detect a bad invocation.
 show_usage() {
+    local exit_code="${1:-0}"
     cat << EOF
 GitLab CE Secure Install v${SCRIPT_VERSION}
 
@@ -316,12 +316,12 @@ Interactive Mode (no arguments):
 Non-Interactive Mode (Simple Storage - Recommended):
     $0 --vmid <id> --hostname <name> --cpu <cores> --ram <mb> \\
        --storage-mode simple --rootfs-size <gb> \\
-       --ip <ip/mask> --gateway <ip> --dns <ip> --url <url> --storage <vg>
+       --ip <ip/mask> --gateway <ip> --dns <ip> --url <url> --pve-storage <id>
 
 Non-Interactive Mode (Advanced Storage):
     $0 --vmid <id> --hostname <name> --cpu <cores> --ram <mb> \\
        --storage-mode advanced --bootdisk <gb> --datadisk <gb> --logdisk <gb> --configdisk <gb> \\
-       --ip <ip/mask> --gateway <ip> --dns <ip> --url <url> --storage <vg>
+       --ip <ip/mask> --gateway <ip> --dns <ip> --url <url> --pve-storage <id> --storage <vg>
 
 Required Options (Non-Interactive):
     --vmid <id>           Container ID (e.g., 110)
@@ -332,7 +332,14 @@ Required Options (Non-Interactive):
     --gateway <ip>        Gateway IP (e.g., 192.168.1.1)
     --dns <ip>            DNS server IP (e.g., 8.8.8.8)
     --url <url>           GitLab URL (e.g., https://gitlab.example.com)
-    --storage <vg>        LVM storage VG name (e.g., pve)
+
+Storage Options:
+    --pve-storage <id>    Proxmox storage ID for the container rootfs (default: local-lvm).
+                          This is what 'pvesm status' lists (local-lvm, local-zfs, ...),
+                          NOT the LVM volume-group name. Check with 'pvesm status'.
+    --storage <vg>        LVM volume-group name for Advanced Mode's separate volumes
+                          (e.g., pve). This is what 'vgs' lists. Required in Advanced Mode
+                          only; ignored in Simple Mode.
 
 Storage Mode Options:
     --storage-mode <mode> Storage configuration mode (default: simple)
@@ -365,29 +372,29 @@ Examples:
     $0 --vmid 110 --hostname gitlab --cpu 4 --ram 8192 \\
        --storage-mode simple --rootfs-size 50 \\
        --ip 192.168.1.110/24 --gateway 192.168.1.1 --dns 8.8.8.8 \\
-       --url https://gitlab.example.com --storage local-lvm
+       --url https://gitlab.example.com --pve-storage local-lvm
 
-    # Advanced Mode - Separate LVM volumes
+    # Advanced Mode - Separate LVM volumes (--pve-storage = rootfs, --storage = VG for the extra volumes)
     $0 --vmid 120 --hostname gitlab --cpu 4 --ram 8192 \\
        --storage-mode advanced --bootdisk 20 --datadisk 100 --logdisk 10 --configdisk 2 \\
        --ip 192.168.1.120/24 --gateway 192.168.1.1 --dns 8.8.8.8 \\
-       --url https://gitlab.example.com --storage local-lvm
+       --url https://gitlab.example.com --pve-storage local-lvm --storage pve
 
-    # v1.0.0 compatibility (automatically uses Advanced Mode)
+    # v1.0.0 compatibility (automatically uses Advanced Mode; rootfs defaults to local-lvm)
     $0 --vmid 110 --hostname gitlab --cpu 4 --ram 8192 \\
        --bootdisk 20 --datadisk 100 --logdisk 10 --configdisk 2 \\
        --ip 192.168.1.110/24 --gateway 192.168.1.1 --dns 8.8.8.8 \\
-       --url https://gitlab.example.com --storage local-lvm
+       --url https://gitlab.example.com --storage pve
 
     # Public deployment with Let's Encrypt
     $0 --vmid 130 --hostname gitlab --cpu 4 --ram 8192 \\
        --storage-mode simple --rootfs-size 50 \\
        --ip 10.29.83.130/24 --gateway 10.29.83.253 --dns 8.8.8.8 \\
-       --url https://gitlab.example.com --storage pve \\
+       --url https://gitlab.example.com --pve-storage local-lvm \\
        --ssl-type letsencrypt --le-email admin@example.com
 
 EOF
-    exit 0
+    exit "$exit_code"
 }
 
 # Parse arguments
@@ -459,6 +466,10 @@ while [[ $# -gt 0 ]]; do
             STORAGE="$2"
             shift 2
             ;;
+        --pve-storage)
+            PVE_STORAGE="$2"
+            shift 2
+            ;;
         --bridge)
             BRIDGE="$2"
             shift 2
@@ -480,7 +491,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             log_error "Unknown option: $1"
-            show_usage
+            show_usage 1
             ;;
     esac
 done
@@ -493,6 +504,22 @@ if [ -n "$OPT_SIZE" ] || [ -n "$LOG_SIZE" ] || [ -n "$ETC_SIZE" ]; then
     STORAGE_MODE="advanced"
     log_info "Detected v1.0.0 parameters, using Advanced Mode for backward compatibility"
 fi
+
+# ---------- Pre-flight Checks ----------
+log_step "Running pre-flight checks..."
+
+# Check if running as root
+if [[ $EUID -ne 0 ]]; then
+   err "This script must be run as root. Please use sudo or run as root user."
+fi
+
+# Check if running on Proxmox
+if ! command -v pct &> /dev/null; then
+    err "This script can only run on Proxmox VE."
+fi
+
+log_info "✓ Root privileges confirmed"
+log_info "✓ Proxmox VE environment confirmed"
 
 # ---------- Update Proxmox Host System ----------
 log_step "Updating Proxmox host system"
@@ -652,9 +679,14 @@ if [ "$INTERACTIVE" = true ]; then
     read -rp "GitLab URL (default: ${DEFAULT_URL}): " GITLAB_URL
     GITLAB_URL="${GITLAB_URL:-$DEFAULT_URL}"
     
-    read -rp "LVM Storage VG Name (default: pve): " STORAGE
-    STORAGE="${STORAGE:-pve}"
-    
+    read -rp "Proxmox Storage ID for rootfs (from 'pvesm status', default: local-lvm): " PVE_STORAGE_INPUT
+    PVE_STORAGE="${PVE_STORAGE_INPUT:-local-lvm}"
+
+    if [ "$STORAGE_MODE" = "advanced" ]; then
+        read -rp "LVM Volume-Group Name for separate volumes (from 'vgs', default: pve): " STORAGE
+        STORAGE="${STORAGE:-pve}"
+    fi
+
     echo ""
     read -rp "GitLab Version (leave empty for latest stable, or enter version like 16.8.1): " GITLAB_VERSION
     read -rp "Network Bridge (default: vmbr0): " BRIDGE_INPUT
@@ -663,13 +695,16 @@ if [ "$INTERACTIVE" = true ]; then
 else
     # Validate required parameters in non-interactive mode
     if [ "$STORAGE_MODE" = "simple" ]; then
+        # Simple Mode uses only the rootfs storage ID ($PVE_STORAGE, which defaults to
+        # local-lvm) — no LVM VG is touched, so --storage is not required here.
         if [ -z "$VMID" ] || [ -z "$CT_HOSTNAME" ] || [ -z "$CPU" ] || [ -z "$RAM" ] || \
            [ -z "$BOOTDISK" ] || [ -z "$CT_IP" ] || [ -z "$GATEWAY" ] || [ -z "$DNS" ] || \
-           [ -z "$GITLAB_URL" ] || [ -z "$STORAGE" ]; then
-            log_error "Simple Mode requires: --vmid, --hostname, --cpu, --ram, --rootfs-size, --ip, --gateway, --dns, --url, --storage"
+           [ -z "$GITLAB_URL" ]; then
+            log_error "Simple Mode requires: --vmid, --hostname, --cpu, --ram, --rootfs-size, --ip, --gateway, --dns, --url"
             exit 1
         fi
     else
+        # Advanced Mode also creates separate LVs via lvcreate, which needs the VG name ($STORAGE).
         if [ -z "$VMID" ] || [ -z "$CT_HOSTNAME" ] || [ -z "$CPU" ] || [ -z "$RAM" ] || \
            [ -z "$BOOTDISK" ] || [ -z "$OPT_SIZE" ] || [ -z "$LOG_SIZE" ] || [ -z "$ETC_SIZE" ] || \
            [ -z "$CT_IP" ] || [ -z "$GATEWAY" ] || [ -z "$DNS" ] || \
@@ -686,11 +721,21 @@ echo ""
 # ---------- Validation ----------
 log_step "Validating input parameters..."
 
-# Check VG exists
-if ! vgs "$STORAGE" >/dev/null 2>&1; then
-    err "VG '${STORAGE}' does not exist. Please check with 'vgs' command."
+# Check the Proxmox storage ID exists (used for the container rootfs in both modes).
+# This is a storage ID from 'pvesm status' (e.g. local-lvm), NOT the LVM VG name.
+if ! pvesm status --storage "$PVE_STORAGE" >/dev/null 2>&1; then
+    err "Proxmox storage '${PVE_STORAGE}' does not exist. Please check with 'pvesm status'."
 fi
-log_info "✓ VG '${STORAGE}' exists"
+log_info "✓ Proxmox storage '${PVE_STORAGE}' exists"
+
+# Advanced Mode additionally creates separate LVs directly on an LVM volume group,
+# so the VG name ($STORAGE) must resolve via 'vgs'. Simple Mode never touches a raw VG.
+if [ "$STORAGE_MODE" = "advanced" ]; then
+    if ! vgs "$STORAGE" >/dev/null 2>&1; then
+        err "VG '${STORAGE}' does not exist. Please check with 'vgs' command."
+    fi
+    log_info "✓ VG '${STORAGE}' exists"
+fi
 
 # Check for existing container and LVs
 EXISTING_CONTAINER=false
@@ -700,12 +745,15 @@ if pct status "$VMID" >/dev/null 2>&1; then
     EXISTING_CONTAINER=true
 fi
 
-# Check for GitLab-related LVs
-for lv_pattern in "vm-${VMID}-gitlab-etc" "vm-${VMID}-gitlab-log" "vm-${VMID}-gitlab-opt"; do
-    if lvdisplay "/dev/${STORAGE}/${lv_pattern}" >/dev/null 2>&1; then
-        EXISTING_LVS+=("$lv_pattern")
-    fi
-done
+# Check for GitLab-related LVs. Only Advanced Mode creates these separate volumes, so the
+# scan runs there only. A leftover container is handled by the check above in either mode.
+if [ "$STORAGE_MODE" = "advanced" ]; then
+    for lv_pattern in "vm-${VMID}-gitlab-etc" "vm-${VMID}-gitlab-log" "vm-${VMID}-gitlab-opt"; do
+        if lvdisplay "/dev/${STORAGE}/${lv_pattern}" >/dev/null 2>&1; then
+            EXISTING_LVS+=("$lv_pattern")
+        fi
+    done
+fi
 
 # If existing resources found, handle cleanup
 if [ "$EXISTING_CONTAINER" = true ] || [ ${#EXISTING_LVS[@]} -gt 0 ]; then
@@ -834,10 +882,12 @@ GITHUB_LINK="https://github.com/hiall-fyi"
 # Create beautiful Markdown-formatted Notes for Proxmox UI
 if [ "$STORAGE_MODE" = "simple" ]; then
     STORAGE_SECTION="**Mode:** Simple (Single Root Filesystem) ⭐
+**Rootfs Storage:** ${PVE_STORAGE}
 **Root Size:** ${BOOTDISK}G
 **All GitLab data on root filesystem**"
 else
     STORAGE_SECTION="**Mode:** Advanced (Separate LVM Volumes)
+**Rootfs Storage:** ${PVE_STORAGE}
 
 - **Config:** \`/etc/gitlab\` → \`/dev/${STORAGE}/vm-${VMID}-gitlab-etc\` (${ETC_SIZE}G)
 - **Logs:** \`/var/log/gitlab\` → \`/dev/${STORAGE}/vm-${VMID}-gitlab-log\` (${LOG_SIZE}G)
@@ -891,7 +941,7 @@ pct create "$VMID" "$TEMPLATE" \
   --hostname "$CT_HOSTNAME" \
   --cores "$CPU" \
   --memory "$RAM" \
-  --rootfs "${STORAGE}:${BOOTDISK}" \
+  --rootfs "${PVE_STORAGE}:${BOOTDISK}" \
   --net0 "name=eth0,bridge=${BRIDGE},ip=${CT_IP},gw=${GATEWAY},type=veth" \
   --nameserver "$DNS" \
   --unprivileged 1 \
@@ -994,24 +1044,19 @@ if [ "$STORAGE_MODE" = "advanced" ]; then
     # Create temporary mount points on host
     mkdir -p /tmp/gitlab-mount-{etc,log,opt}
 
-    # Mount, set ownership, unmount for each LV
-    log_info "Processing /etc/gitlab volume..."
-    mount "/dev/${STORAGE}/${LV_ETC}" /tmp/gitlab-mount-etc
-    chown -R 100000:100000 /tmp/gitlab-mount-etc
-    chmod 755 /tmp/gitlab-mount-etc
-    umount /tmp/gitlab-mount-etc
+    # Mount, set ownership, unmount for each LV. Same steps per volume, so loop over
+    # "<mount-suffix>:<lv-name>:<container-path>" to keep the three in lockstep.
+    for volume in "etc:${LV_ETC}:/etc/gitlab" "log:${LV_LOG}:/var/log/gitlab" "opt:${LV_OPT}:/var/opt/gitlab"; do
+        mount_dir="/tmp/gitlab-mount-${volume%%:*}"   # first field
+        lv_name="${volume#*:}"; lv_name="${lv_name%%:*}"  # second field
+        container_path="${volume##*:}"                # third field
 
-    log_info "Processing /var/log/gitlab volume..."
-    mount "/dev/${STORAGE}/${LV_LOG}" /tmp/gitlab-mount-log
-    chown -R 100000:100000 /tmp/gitlab-mount-log
-    chmod 755 /tmp/gitlab-mount-log
-    umount /tmp/gitlab-mount-log
-
-    log_info "Processing /var/opt/gitlab volume..."
-    mount "/dev/${STORAGE}/${LV_OPT}" /tmp/gitlab-mount-opt
-    chown -R 100000:100000 /tmp/gitlab-mount-opt
-    chmod 755 /tmp/gitlab-mount-opt
-    umount /tmp/gitlab-mount-opt
+        log_info "Processing ${container_path} volume..."
+        mount "/dev/${STORAGE}/${lv_name}" "$mount_dir"
+        chown -R 100000:100000 "$mount_dir"
+        chmod 755 "$mount_dir"
+        umount "$mount_dir"
+    done
 
     # Cleanup temporary mount points
     rmdir /tmp/gitlab-mount-{etc,log,opt}

@@ -6,7 +6,7 @@
 ![Proxmox](https://img.shields.io/badge/Proxmox-VE%208.x-E57000?style=for-the-badge&logo=proxmox&logoColor=white) ![GitLab CE](https://img.shields.io/badge/GitLab-CE-FC6D26?style=for-the-badge&logo=gitlab&logoColor=white) ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LXC-E95420?style=for-the-badge&logo=ubuntu&logoColor=white) ![Security](https://img.shields.io/badge/Security-Hardened-00C853?style=for-the-badge&logo=security&logoColor=white)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-2.0.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge) ![shellcheck](https://img.shields.io/badge/shellcheck-passing-brightgreen?style=for-the-badge&logo=gnu-bash&logoColor=white) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-2.1.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge) ![shellcheck](https://img.shields.io/badge/shellcheck-passing-brightgreen?style=for-the-badge&logo=gnu-bash&logoColor=white) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/pve-secure-gitlab-lxc?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/pve-secure-gitlab-lxc?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/pve-secure-gitlab-lxc?style=for-the-badge&logo=github) ![GitHub last commit](https://img.shields.io/github/last-commit/hiall-fyi/pve-secure-gitlab-lxc?style=for-the-badge&logo=github)
@@ -63,7 +63,7 @@ chmod +x pve-secure-gitlab-lxc.sh
   --vmid 110 --hostname gitlab --cpu 4 --ram 8192 \
   --storage-mode simple --rootfs-size 50 \
   --ip 192.168.1.110/24 --gateway 192.168.1.1 --dns 8.8.8.8 \
-  --url https://gitlab.local --storage local-lvm
+  --url https://gitlab.local --pve-storage local-lvm
 ```
 
 **Non-Interactive — Advanced Mode**:
@@ -73,7 +73,7 @@ chmod +x pve-secure-gitlab-lxc.sh
   --vmid 120 --hostname gitlab --cpu 4 --ram 8192 \
   --storage-mode advanced --bootdisk 20 --datadisk 100 --logdisk 10 --configdisk 2 \
   --ip 192.168.1.120/24 --gateway 192.168.1.1 --dns 8.8.8.8 \
-  --url https://gitlab.local --storage local-lvm
+  --url https://gitlab.local --pve-storage local-lvm --storage pve
 ```
 
 ### 3. Access GitLab
@@ -113,6 +113,15 @@ chmod +x pve-secure-gitlab-lxc.sh
 ---
 
 ## Storage Configuration Guide
+
+### Two storage flags, two different things
+
+Proxmox keeps these in separate namespaces, and the script needs both kept apart:
+
+- **`--pve-storage`** — a Proxmox **storage ID**, the kind `pvesm status` lists (`local-lvm`, `local-zfs`, ...). The container's root disk lives here. Defaults to `local-lvm`, which is what a stock Proxmox install ships. Used in both modes.
+- **`--storage`** — an LVM **volume-group name**, the kind `vgs` lists (usually `pve`). Only Advanced Mode uses it, for the separate `/etc`, `/var/log`, `/var/opt` volumes. Leave it out in Simple Mode.
+
+On a default install `local-lvm` is backed by the volume group `pve`, but the two names are not interchangeable. `pve` is not a storage ID, and `local-lvm` is not a volume group. If you're unsure, run `pvesm status` for the first and `vgs` for the second.
 
 ### Quick Comparison
 
@@ -276,7 +285,7 @@ pct exec <VMID> -- gitlab-ctl renew-le-certs
   --vmid 110 --hostname gitlab --cpu 4 --ram 8192 \
   --storage-mode simple --rootfs-size 50 \
   --ip 192.168.1.110/24 --gateway 192.168.1.1 --dns 8.8.8.8 \
-  --url https://gitlab.local --storage local-lvm
+  --url https://gitlab.local --pve-storage local-lvm
 ```
 
 </details>
@@ -289,7 +298,7 @@ pct exec <VMID> -- gitlab-ctl renew-le-certs
   --vmid 120 --hostname gitlab-dev --cpu 6 --ram 12288 \
   --storage-mode simple --rootfs-size 100 \
   --ip 192.168.1.120/24 --gateway 192.168.1.1 --dns 8.8.8.8 \
-  --url https://gitlab.dev.local --storage local-lvm
+  --url https://gitlab.dev.local --pve-storage local-lvm
 ```
 
 </details>
@@ -302,7 +311,7 @@ pct exec <VMID> -- gitlab-ctl renew-le-certs
   --vmid 130 --hostname gitlab-prod --cpu 8 --ram 16384 \
   --storage-mode advanced --bootdisk 30 --datadisk 300 --logdisk 20 --configdisk 5 \
   --ip 192.168.1.130/24 --gateway 192.168.1.1 --dns 8.8.8.8 \
-  --url https://gitlab.company.com --storage local-lvm
+  --url https://gitlab.company.com --pve-storage local-lvm --storage pve
 ```
 
 </details>
@@ -315,7 +324,7 @@ pct exec <VMID> -- gitlab-ctl renew-le-certs
   --vmid 150 --hostname gitlab --cpu 4 --ram 8192 \
   --storage-mode simple --rootfs-size 100 \
   --ip 203.0.113.150/24 --gateway 203.0.113.1 --dns 8.8.8.8 \
-  --url https://gitlab.example.com --storage local-lvm \
+  --url https://gitlab.example.com --pve-storage local-lvm \
   --ssl-type letsencrypt --le-email you@example.com
 ```
 
@@ -325,12 +334,13 @@ pct exec <VMID> -- gitlab-ctl renew-le-certs
 <summary><strong>v1.0.0 Compatibility (existing automation scripts)</strong></summary>
 
 ```bash
-# Old v1.0.0 command still works — automatically uses Advanced Mode
+# Old v1.0.0 command still works — automatically uses Advanced Mode.
+# --storage is your LVM volume group (vgs); the rootfs defaults to the local-lvm storage ID.
 ./pve-secure-gitlab-lxc.sh \
   --vmid 140 --hostname gitlab --cpu 4 --ram 8192 \
   --bootdisk 20 --datadisk 100 --logdisk 10 --configdisk 2 \
   --ip 192.168.1.140/24 --gateway 192.168.1.1 --dns 8.8.8.8 \
-  --url https://gitlab.local --storage local-lvm
+  --url https://gitlab.local --storage pve
 ```
 
 </details>
@@ -582,6 +592,8 @@ Contributions welcome!
 3. Commit changes (`git commit -m 'Add AmazingFeature'`)
 4. Push to branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+Bug reports and testing count too. Everyone who's helped shape a release is listed in [CREDITS.md](CREDITS.md).
 
 ---
 

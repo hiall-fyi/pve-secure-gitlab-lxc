@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-07-15
+
+**Fresh-install storage fix**
+
+### Fixed
+- **Fresh installs no longer fail with "storage 'pve' does not exist"** ([#1](https://github.com/hiall-fyi/pve-secure-gitlab-lxc/issues/1) - @lochowa) — The script treated the LVM volume-group name and the Proxmox storage ID as the same value, but Proxmox keeps them separate: `pct create` wants a storage ID (`local-lvm`), while `lvcreate` wants a volume group (`pve`). On a default install no single value satisfied both, so the container root disk failed to create. There are now two flags: `--pve-storage` for the rootfs storage ID (defaults to `local-lvm`) and `--storage` for the volume group used by Advanced Mode's separate volumes.
+
+### Changed
+- **`--storage` is now Advanced Mode only, and `--pve-storage` sets the rootfs storage** — Simple Mode installs only need `--pve-storage` (or nothing, since it defaults to `local-lvm`). If you have non-interactive automation that passes `--storage <id>` expecting it to place the rootfs, switch that value to `--pve-storage <id>`. Automation that passes an actual volume group to `--storage` for Advanced Mode keeps working, and now also routes the rootfs to `local-lvm` correctly instead of failing.
+- **The rootfs storage ID now shows in the completion summary, the install log, and the Proxmox container Notes** — Previously only the volume group appeared, and only in Advanced Mode. You can now see which storage your root disk landed on in every mode.
+
+### Improved
+- **`--help` works without root and off a Proxmox host** — The root and Proxmox checks used to run before argument parsing, so `./pve-secure-gitlab-lxc.sh --help` failed with "must be run as root" on any other machine. Help now prints for anyone; the environment checks still guard the actual install.
+- **An unknown flag now exits with an error code** — Passing a typo'd option like `--bogas` used to print the usage text and exit 0, so automation couldn't tell a bad invocation from a good one. It now exits 1 with the error on stderr. `--help` still exits 0.
+
 ## [2.0.0] - 2026-05-21
 
 **Audit pass — security, correctness, and consistency fixes**
