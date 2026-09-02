@@ -1183,6 +1183,7 @@ if [ "$SSL_TYPE" = "self-signed" ]; then
             -keyout /etc/gitlab/ssl/${GITLAB_HOSTNAME}.key \
             -out /etc/gitlab/ssl/${GITLAB_HOSTNAME}.crt \
             -subj '/C=HK/ST=HK/L=HK/O=Internal/CN=${GITLAB_HOSTNAME}' \
+            -addext 'subjectAltName = DNS:${GITLAB_HOSTNAME},IP:${CT_IP%/*}' \
             2>/dev/null
         
         chmod 600 /etc/gitlab/ssl/${GITLAB_HOSTNAME}.key
