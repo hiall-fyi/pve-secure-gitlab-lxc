@@ -1,6 +1,6 @@
 # Credits
 
-pve-secure-gitlab-lxc is shaped by the people who run it and take the time to report what breaks, suggest what's missing, and test the fixes. This page recognises them.
+pve-secure-gitlab-lxc is shaped by the people who run it and take the time to report what breaks, suggest what's missing, test the fixes, and send in the fix themselves. This page recognises them.
 
 ---
 
@@ -12,7 +12,11 @@ If the script saved you an afternoon of Proxmox and GitLab wrangling, a coffee i
 
 ## Per-Version Credits
 
-Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
+Community contributors who helped shape each release through bug reports, feature requests, testing, feedback, and code.
+
+### v2.1.1
+
+- **[@Larry-Home](https://github.com/Larry-Home)** — Diagnosed why GitLab Runner rejected the self-signed certificate and opened the fix themselves ([#2](https://github.com/hiall-fyi/pve-secure-gitlab-lxc/pull/2)): traced it to Go's certificate verification requiring a Subject Alternative Name instead of the legacy Common Name, then added the missing SAN entries and validated the certificate end to end before submitting.
 
 ### v2.1.0
 

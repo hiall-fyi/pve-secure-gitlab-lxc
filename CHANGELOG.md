@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-09-04
+
+**Security & hardening pass**
+
+### Security
+- **`--url` and `--version` could be used to run arbitrary commands inside the container** — `--url` was only checked for a valid prefix (`http://`/`https://`), and `--version` wasn't checked at all; both were then passed straight into the commands the script runs as root to install GitLab and generate the self-signed certificate. A value containing a stray quote, semicolon, or backtick would run as shell syntax instead of plain text. Both are now checked end-to-end against a safe character set before anything runs.
+- **Git login rate limiting no longer whitelists the container's entire private network** — It used to exempt all of `10.0.0.0/8` and `192.168.0.0/16` from brute-force protection on Git basic auth. If GitLab sits behind a reverse proxy or NAT, which is normal for a Let's Encrypt / public-facing setup, every request can arrive looking like it came from an address in that range, so the whitelist was quietly exempting all traffic, not just your own LAN. It now only exempts the container's own loopback address. If you rely on the old range for trusted CI runners, add it back in `/etc/gitlab/gitlab.rb`.
+- **`--gateway` and `--bridge` could be used to inject extra network configuration** — Neither flag was checked before being placed into the container's network configuration line alongside the IP address. A value containing a comma could smuggle an extra setting into that line. Both are now checked against a safe character set before the container is created.
+- **`--vmid` was unchecked and feeds a log file path on the Proxmox host** — A value like `../../etc/cron.d/x` could point the install log outside `/var/log`. In practice `pct create` already rejects a non-numeric VMID before the script gets that far, but `--vmid` is now checked explicitly too, consistent with every other flag above.
+- **Temporary mount points used a predictable path** — The host-side directories used while attaching Advanced Mode's storage volumes had a fixed, predictable name. They're now created with a random name each run, closing a narrow window where another local user could have pre-placed something at that path.
+
+### Fixed
+- **GitLab Runner rejected the self-signed certificate** ([#2](https://github.com/hiall-fyi/pve-secure-gitlab-lxc/pull/2) - @Larry-Home) — Runner's TLS verification no longer accepts a certificate's Common Name on its own and needs a Subject Alternative Name instead, so registering a runner against a self-signed install failed with "certificate relies on legacy Common Name field, use SANs instead." The certificate now includes the SAN entries Runner requires, whether GitLab is reached by hostname or by IP address.
+- **A GitLab URL with a custom port produced a certificate that never matched on connection** — If `--url` included a port (e.g. `https://gitlab.example.com:8443`), the certificate's identity fields included the port too, which no client checks for, so hostname verification always failed. The certificate now uses the bare hostname.
+
 ## [2.1.0] - 2026-07-15
 
 **Fresh-install storage fix**

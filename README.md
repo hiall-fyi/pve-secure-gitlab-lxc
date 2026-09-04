@@ -6,7 +6,7 @@
 ![Proxmox](https://img.shields.io/badge/Proxmox-VE%208.x-E57000?style=for-the-badge&logo=proxmox&logoColor=white) ![GitLab CE](https://img.shields.io/badge/GitLab-CE-FC6D26?style=for-the-badge&logo=gitlab&logoColor=white) ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LXC-E95420?style=for-the-badge&logo=ubuntu&logoColor=white) ![Security](https://img.shields.io/badge/Security-Hardened-00C853?style=for-the-badge&logo=security&logoColor=white)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-2.1.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge) ![shellcheck](https://img.shields.io/badge/shellcheck-passing-brightgreen?style=for-the-badge&logo=gnu-bash&logoColor=white) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-2.1.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge) ![shellcheck](https://img.shields.io/badge/shellcheck-passing-brightgreen?style=for-the-badge&logo=gnu-bash&logoColor=white) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/pve-secure-gitlab-lxc?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/pve-secure-gitlab-lxc?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/pve-secure-gitlab-lxc?style=for-the-badge&logo=github) ![GitHub last commit](https://img.shields.io/github/last-commit/hiall-fyi/pve-secure-gitlab-lxc?style=for-the-badge&logo=github)
@@ -377,6 +377,18 @@ sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keyc
 sudo cp gitlab.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
 ```
 
+### Self-Signed Certificate — GitLab Runner
+
+Registering a Runner against a self-signed install fails until the Runner trusts the certificate too — this is separate from the browser trust step above.
+
+```bash
+pct exec <VMID> -- cat /etc/gitlab/ssl/<hostname>.crt > gitlab.crt
+sudo cp gitlab.crt /etc/gitlab-runner/certs/<hostname>.crt
+sudo gitlab-runner restart
+```
+
+For a Docker-executor Runner, the build containers don't pick this up automatically — see [GitLab's self-signed certificate docs](https://docs.gitlab.com/runner/configuration/tls-self-signed/) for mounting it into the job container.
+
 ---
 
 ## Version Management
@@ -594,14 +606,6 @@ Contributions welcome!
 5. Open a Pull Request
 
 Bug reports and testing count too. Everyone who's helped shape a release is listed in [CREDITS.md](CREDITS.md).
-
----
-
-<div align="center">
-
-[![Star History Chart](https://api.star-history.com/svg?repos=hiall-fyi/pve-secure-gitlab-lxc&type=Date)](https://star-history.com/#hiall-fyi/pve-secure-gitlab-lxc&Date)
-
-</div>
 
 ---
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/hiall-fyi/pve-secure-gitlab-lxc/security/advisories/new
+    about: Please don't file security issues publicly, report them privately here instead.
+  - name: Questions and help
+    url: https://github.com/hiall-fyi/pve-secure-gitlab-lxc/discussions
+    about: For usage questions and general help, please use Discussions.

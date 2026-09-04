@@ -1,0 +1,108 @@
+name: Bug report
+description: The script didn't do what it should while installing or configuring GitLab CE
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. **Found a security issue**
+        (a way to get a flag value or prompt answer to run as shell syntax,
+        for example)? Please use [private reporting](https://github.com/hiall-fyi/pve-secure-gitlab-lxc/security/advisories/new)
+        instead, see [SECURITY.md](https://github.com/hiall-fyi/pve-secure-gitlab-lxc/blob/main/SECURITY.md).
+
+        Otherwise, the install log at `/var/log/gitlab-ce-install-<VMID>.log` on
+        your Proxmox host is the single most useful thing you can paste in below,
+        just redact your IP and the initial root password first.
+  - type: checkboxes
+    attributes:
+      label: Before you start
+      options:
+        - label: I have searched the existing issues and discussions for this
+          required: true
+  - type: input
+    id: script_version
+    attributes:
+      label: Script version
+      description: From the top of the interactive menu, or `./pve-secure-gitlab-lxc.sh --help`.
+      placeholder: e.g. 2.1.1
+    validations:
+      required: true
+  - type: input
+    id: pve_version
+    attributes:
+      label: Proxmox VE version
+      description: Output of `pveversion`.
+      placeholder: e.g. 8.2.4
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How did you run the script?
+      options:
+        - Interactive (no flags)
+        - Non-interactive (with flags)
+    validations:
+      required: true
+  - type: dropdown
+    id: storage_mode
+    attributes:
+      label: Storage mode
+      options:
+        - Simple Mode (single root filesystem)
+        - Advanced Mode (separate LVM volumes)
+        - Not sure / didn't get that far
+    validations:
+      required: true
+  - type: dropdown
+    id: ssl_type
+    attributes:
+      label: SSL type
+      options:
+        - Self-signed
+        - Let's Encrypt
+        - Not sure / didn't get that far
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or flags used
+      description: >
+        If you ran it non-interactively, paste the exact command. Redact your
+        real IP or domain if you'd rather not share it.
+      render: shell
+      placeholder: |
+        ./pve-secure-gitlab-lxc.sh --vmid 110 --hostname gitlab --cpu 4 --ram 8192 \
+          --storage-mode simple --rootfs-size 50 \
+          --ip 192.168.1.110/24 --gateway 192.168.1.1 --dns 8.8.8.8 \
+          --url https://gitlab.local --pve-storage local-lvm
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened?
+    validations:
+      required: true
+  - type: textarea
+    id: install_log
+    attributes:
+      label: Install log
+      description: >
+        From `/var/log/gitlab-ce-install-<VMID>.log` on the Proxmox host. Redact
+        your IP and the initial root password before pasting.
+      render: text
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce (if you can)
+  - type: textarea
+    id: already_tried
+    attributes:
+      label: What have you already tried?
+      placeholder: e.g. ran with --force-cleanup, tried a different VMID, checked pvesm status

@@ -3,7 +3,7 @@
 # GitLab CE Secure Installation Script for Proxmox LXC
 # Military-Grade Security Standards - Internal Deployment
 #
-# Version: 2.1.0
+# Version: 2.1.1
 # Author: Joe @ hiall-fyi
 # GitHub: https://github.com/hiall-fyi
 # Support: https://buymeacoffee.com/hiallfyi
@@ -279,7 +279,7 @@ EOFLOG
 # below, so `--help` works for any user on any machine without needing root or a Proxmox
 # host. The pre-flight gate still guards every real operation.
 INTERACTIVE=true
-SCRIPT_VERSION="2.1.0"
+SCRIPT_VERSION="2.1.1"
 VMID=""
 CT_HOSTNAME=""
 CPU=""
@@ -721,6 +721,13 @@ echo ""
 # ---------- Validation ----------
 log_step "Validating input parameters..."
 
+# VMID feeds a host-side log file path (write_install_log) as well as every pct
+# command below; a non-numeric value could point that path outside /var/log.
+if ! [[ "$VMID" =~ ^[0-9]+$ ]]; then
+    err "Invalid VMID: '${VMID}'. Must be a positive integer, e.g. 110."
+fi
+log_info "✓ VMID format is valid"
+
 # Check the Proxmox storage ID exists (used for the container rootfs in both modes).
 # This is a storage ID from 'pvesm status' (e.g. local-lvm), NOT the LVM VG name.
 if ! pvesm status --storage "$PVE_STORAGE" >/dev/null 2>&1; then
@@ -822,11 +829,30 @@ if ! [[ "$CT_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then
 fi
 log_info "✓ IP format is valid"
 
-# Validate URL format
-if ! [[ "$GITLAB_URL" =~ ^https?:// ]]; then
-    err "Invalid URL format. Must start with http:// or https://"
+# GATEWAY and BRIDGE both land in the --net0 string below; an unvalidated comma
+# or equals sign here could smuggle an extra key into it.
+if ! [[ "$GATEWAY" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    err "Invalid gateway format. Correct format: 192.168.1.1"
+fi
+log_info "✓ Gateway format is valid"
+
+# Same concern as above.
+if ! [[ "$BRIDGE" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    err "Invalid bridge name: '${BRIDGE}'. Use letters, digits, underscores, hyphens and dots only, e.g. vmbr0."
+fi
+log_info "✓ Bridge name is valid"
+
+# Full-match, not prefix-only: this reaches bash -c inside the container, so a
+# stray quote or semicolon here would be a command injection, not just a typo.
+if ! [[ "$GITLAB_URL" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~-]*)?$ ]]; then
+    err "Invalid URL format. Use http(s)://<hostname>[:<port>][/<path>] with letters, digits, dots and hyphens only."
 fi
 log_info "✓ URL format is valid"
+
+# Same injection concern as the URL check above.
+if [ -n "$GITLAB_VERSION" ] && ! [[ "$GITLAB_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    err "Invalid --version format: '${GITLAB_VERSION}'. Expected X.Y.Z, e.g. 16.8.1."
+fi
 
 # Auto-adjust SSL_TYPE based on URL protocol
 if [[ "$GITLAB_URL" =~ ^https:// ]] && [ "$SSL_TYPE" = "self-signed" ]; then
@@ -1041,13 +1067,15 @@ if [ "$STORAGE_MODE" = "advanced" ]; then
     # In unprivileged containers, root (UID 0) inside = UID 100000 on host
     # We need to temporarily mount the LVs on host, set ownership, then unmount
 
-    # Create temporary mount points on host
-    mkdir -p /tmp/gitlab-mount-{etc,log,opt}
+    # Random dir, not a fixed name, so a local user can't pre-plant a symlink
+    # here before root runs the script.
+    MOUNT_ROOT=$(mktemp -d /tmp/gitlab-mount.XXXXXX)
+    mkdir -p "$MOUNT_ROOT"/{etc,log,opt}
 
     # Mount, set ownership, unmount for each LV. Same steps per volume, so loop over
     # "<mount-suffix>:<lv-name>:<container-path>" to keep the three in lockstep.
     for volume in "etc:${LV_ETC}:/etc/gitlab" "log:${LV_LOG}:/var/log/gitlab" "opt:${LV_OPT}:/var/opt/gitlab"; do
-        mount_dir="/tmp/gitlab-mount-${volume%%:*}"   # first field
+        mount_dir="${MOUNT_ROOT}/${volume%%:*}"       # first field
         lv_name="${volume#*:}"; lv_name="${lv_name%%:*}"  # second field
         container_path="${volume##*:}"                # third field
 
@@ -1059,7 +1087,7 @@ if [ "$STORAGE_MODE" = "advanced" ]; then
     done
 
     # Cleanup temporary mount points
-    rmdir /tmp/gitlab-mount-{etc,log,opt}
+    rmdir "$MOUNT_ROOT"/{etc,log,opt} "$MOUNT_ROOT"
 
     log_info "✓ GitLab volumes prepared with correct UID mapping (100000:100000)"
 
@@ -1166,24 +1194,38 @@ pct exec "$VMID" -- bash -c "$INSTALL_CMD" || err "GitLab CE installation failed
 log_info "✓ GitLab CE installed"
 
 # ---------- SSL Configuration ----------
-# Extract hostname from URL (used by SSL config and security hardening)
-GITLAB_HOSTNAME=$(echo "$GITLAB_URL" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
+# Extract hostname from URL. Strips a trailing port too, since the cert's CN/SAN
+# must be the bare hostname a client verifies against, not host:port.
+GITLAB_HOSTNAME=$(echo "$GITLAB_URL" | sed -e 's|^[^/]*//||' -e 's|/.*$||' -e 's|:[0-9]*$||')
 
 if [ "$SSL_TYPE" = "self-signed" ]; then
     log_step "Configuring self-signed SSL certificate (internal use)"
 
     log_info "Generating self-signed certificate for ${GITLAB_HOSTNAME}..."
 
+    # If the URL host is itself an IP (e.g. the default http://<container-IP>), it
+    # belongs in the IP SAN, not DNS: Go's x509 verification ignores an IP-shaped
+    # string in a DNS SAN.
+    if [[ "$GITLAB_HOSTNAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        if [ "$GITLAB_HOSTNAME" = "${CT_IP%/*}" ]; then
+            SAN_ENTRIES="IP:${CT_IP%/*}"
+        else
+            SAN_ENTRIES="IP:${GITLAB_HOSTNAME},IP:${CT_IP%/*}"
+        fi
+    else
+        SAN_ENTRIES="DNS:${GITLAB_HOSTNAME},IP:${CT_IP%/*}"
+    fi
+
     pct exec "$VMID" -- bash -c "
         mkdir -p /etc/gitlab/ssl
         chmod 755 /etc/gitlab/ssl
-        
+
         # Generate self-signed certificate (10-year validity)
         openssl req -x509 -nodes -days 3650 -newkey rsa:4096 \
             -keyout /etc/gitlab/ssl/${GITLAB_HOSTNAME}.key \
             -out /etc/gitlab/ssl/${GITLAB_HOSTNAME}.crt \
             -subj '/C=HK/ST=HK/L=HK/O=Internal/CN=${GITLAB_HOSTNAME}' \
-            -addext 'subjectAltName = DNS:${GITLAB_HOSTNAME},IP:${CT_IP%/*}' \
+            -addext 'subjectAltName = ${SAN_ENTRIES}' \
             2>/dev/null
         
         chmod 600 /etc/gitlab/ssl/${GITLAB_HOSTNAME}.key
@@ -1249,10 +1291,11 @@ nginx['custom_gitlab_server_config'] = \"
   add_header Referrer-Policy 'strict-origin-when-cross-origin' always;
 \"
 
-# Rate Limiting (Internal use, more relaxed)
+# Loopback only: a wider range looks safe but silently disables brute-force
+# protection for anyone behind a reverse proxy or NAT.
 gitlab_rails['rack_attack_git_basic_auth'] = {
   'enabled' => true,
-  'ip_whitelist' => ['127.0.0.1', '192.168.0.0/16', '10.0.0.0/8'],
+  'ip_whitelist' => ['127.0.0.1'],
   'maxretry' => 10,
   'findtime' => 60,
   'bantime' => 3600

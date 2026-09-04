@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest an improvement or a new capability for the installer
+labels: ["enhancement"]
+body:
+  - type: checkboxes
+    attributes:
+      label: Before you start
+      options:
+        - label: I have searched the existing issues and discussions for this
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do that the script can't do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed solution
+      description: How you imagine it working, if you have a shape in mind.
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Existing workaround, if any
